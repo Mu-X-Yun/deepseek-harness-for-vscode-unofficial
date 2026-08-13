@@ -2,9 +2,11 @@
  * Pure rendering of session events into chat UI items (phase 2).
  *
  * The event set mirrors `SessionEventMap` from `@deepseek-ai/dsh-session`
- * (packages/core/session/src/types.ts). The renderer deliberately uses a
- * structural event type rather than importing the host's types, so it stays
- * a pure, unit-testable function.
+ * (packages/core/session/src/types.ts). Wire events are envelopes:
+ * `{ type, seq, time, data, surfaceOp? }` — the payload lives in `data`
+ * (verified against live `session.event` notifications). The renderer uses
+ * a structural event type rather than importing the host's types, so it
+ * stays a pure, unit-testable function.
  */
 
 export type UiRole = 'user' | 'assistant' | 'tool' | 'system' | 'meta'
@@ -27,19 +29,25 @@ export interface UiItem {
 /** The fields the renderer reads from an event (a structural subset of SessionEvent). */
 export interface RenderableEvent {
   type: string
-  turn?: number
-  step?: number
-  callId?: string
-  name?: string
-  arguments?: string
-  message?: {
-    role?: string
+  seq?: number
+  time?: number
+  /** SessionEvent envelope payload (wire shape: `data` holds the payload). */
+  data?: {
+    turn?: number
+    step?: number
+    callId?: string
+    name?: string
+    arguments?: string
     content?: unknown
-    usage?: { inputTokens?: number; outputTokens?: number }
+    message?: {
+      role?: string
+      content?: unknown
+      usage?: { inputTokens?: number; outputTokens?: number }
+    }
+    error?: { name?: string; code?: string }
+    text?: string
+    [key: string]: unknown
   }
-  text?: string
-  error?: { name?: string; code?: string }
-  todo?: unknown[]
   /** Unknown event payload fields are tolerated (structural subset). */
   [key: string]: unknown
 }
@@ -47,7 +55,7 @@ export interface RenderableEvent {
 function textOf(content: unknown): string | undefined {
   if (typeof content === 'string') return content
   if (Array.isArray(content)) {
-    // ContentBlock[] — join text blocks; skip tool blocks (they render as cards).
+    // ContentBlock[] — join text blocks; skip reasoning/tool blocks.
     const parts: string[] = []
     for (const block of content) {
       if (block && typeof block === 'object' && 'type' in block) {
@@ -65,46 +73,48 @@ function textOf(content: unknown): string | undefined {
  * chat surface (log-only events like `request/header` are skipped).
  */
 export function renderEvent(event: RenderableEvent, index: number): UiItem | undefined {
-  const base = { eventType: event.type, turn: event.turn, step: event.step }
+  const d = event.data
+  const base = { eventType: event.type, turn: d?.turn, step: d?.step }
   switch (event.type) {
     case 'user/message': {
-      const text = textOf((event.message as { content?: unknown } | undefined)?.content ?? event.text)
+      // data holds the UserMessage itself: { content, source, role, id }.
+      const text = textOf(d?.content)
       return { ...base, key: `${index}-${event.type}`, role: 'user', text }
     }
     case 'assistant/message': {
-      const message = event.message as { content?: unknown } | undefined
-      const text = textOf(message?.content)
+      // data = { turn, step, message: AssistantMessage, usage? }.
+      const text = textOf(d?.message?.content)
       return { ...base, key: `${index}-${event.type}`, role: 'assistant', text }
     }
     case 'assistant/chunk': {
       // Token-level stream chunks are aggregated into the assistant item by
       // the UI layer; here they are logged as meta for the (rare) replay view.
-      return { ...base, key: `${index}-${event.type}`, role: 'meta', text: event.text }
+      return { ...base, key: `${index}-${event.type}`, role: 'meta', text: d?.text }
     }
     case 'tool/call': {
       return {
         ...base,
-        key: `${index}-${event.type}-${event.callId ?? ''}`,
+        key: `${index}-${event.type}-${d?.callId ?? ''}`,
         role: 'tool',
-        toolName: event.name,
-        toolCallId: event.callId,
-        argumentsJson: typeof event.arguments === 'string' ? event.arguments : undefined,
+        toolName: d?.name,
+        toolCallId: d?.callId,
+        argumentsJson: typeof d?.arguments === 'string' ? d.arguments : undefined,
       }
     }
     case 'tool/result': {
-      const error = event.error as { name?: string; code?: string } | undefined
+      const error = d?.error as { name?: string; code?: string } | undefined
       return {
         ...base,
-        key: `${index}-${event.type}-${event.callId ?? ''}`,
+        key: `${index}-${event.type}-${d?.callId ?? ''}`,
         role: 'tool',
-        toolCallId: event.callId,
+        toolCallId: d?.callId,
         error: error ? `${error.name} (${error.code})` : undefined,
       }
     }
     case 'turn/start':
-      return { ...base, key: `${index}-${event.type}`, role: 'meta', text: `turn ${event.turn} starts` }
+      return { ...base, key: `${index}-${event.type}`, role: 'meta', text: `turn ${d?.turn} starts` }
     case 'turn/end':
-      return { ...base, key: `${index}-${event.type}`, role: 'meta', text: `turn ${event.turn} ends` }
+      return { ...base, key: `${index}-${event.type}`, role: 'meta', text: `turn ${d?.turn} ends` }
     default:
       // Log-only events (request/header, request/context, todo/write,
       // session/end-seed, step boundaries) have no chat surface.
