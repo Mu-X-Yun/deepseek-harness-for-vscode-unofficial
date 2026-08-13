@@ -1,0 +1,154 @@
+{
+  "name": "dsh-vscode",
+  "displayName": "DeepSeek Harness (DSH)",
+  "description": "Run DeepSeek Harness in the VS Code sidebar: embedded Web UI (phase 1) and native chat (phase 2)",
+  "version": "0.1.0",
+  "publisher": "local",
+  "license": "MIT",
+  "private": true,
+  "engines": {
+    "vscode": "^1.85.0",
+    "node": ">=22.19.0"
+  },
+  "categories": [
+    "AI",
+    "Chat"
+  ],
+  "main": "./out/extension.js",
+  "contributes": {
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "dsh",
+          "title": "DeepSeek Harness",
+          "icon": "media/dsh.svg"
+        }
+      ]
+    },
+    "views": {
+      "dsh": [
+        {
+          "type": "webview",
+          "id": "dsh.chat",
+          "name": "Chat",
+          "retainContextWhenHidden": true
+        }
+      ]
+    },
+    "commands": [
+      {
+        "command": "dsh.startServer",
+        "title": "DSH: Start server"
+      },
+      {
+        "command": "dsh.stopServer",
+        "title": "DSH: Stop server"
+      },
+      {
+        "command": "dsh.openInBrowser",
+        "title": "DSH: Open in browser"
+      },
+      {
+        "command": "dsh.showLogs",
+        "title": "DSH: Show server logs"
+      },
+      {
+        "command": "dsh.openInSecondarySidebar",
+        "title": "DSH: Open in Secondary Sidebar"
+      },
+      {
+        "command": "dsh.addWorkspace",
+        "title": "DSH: Add current workspace"
+      }
+    ],
+    "configuration": {
+      "title": "DSH",
+      "properties": {
+        "dsh.deepseekApiKey": {
+          "type": "string",
+          "markdownDescription": "DeepSeek API key. Injected into the dsh process environment (never written to `.env`). Leave empty to inherit `DEEPSEEK_API_KEY` from the extension host environment.",
+          "scope": "application"
+        },
+        "dsh.deepseekBaseUrl": {
+          "type": "string",
+          "markdownDescription": "Optional custom API endpoint base URL. Only honored from the process environment by dsh; the extension injects it at spawn time.",
+          "scope": "application"
+        },
+        "dsh.runtime.mode": {
+          "type": "string",
+          "enum": [
+            "repo",
+            "installed",
+            "auto-install"
+          ],
+          "default": "repo",
+          "markdownDescription": "Where to get the dsh runtime. `repo` (default, development): run from the `deepseek-harness-master` source checkout next to this extension. `installed`: use a pre-installed `@deepseek-ai/dsh` in `dsh.runtime.path`. `auto-install`: install `@deepseek-ai/dsh` on first use into the extension's storage."
+        },
+        "dsh.runtime.path": {
+          "type": "string",
+          "markdownDescription": "Absolute path to the dsh runtime. For `repo` mode: the `deepseek-harness-master` checkout (auto-detected as a sibling directory if empty). For `installed` mode: a directory containing a usable dsh install (e.g. a global node_modules).",
+          "scope": "application"
+        },
+        "dsh.runtime.nodePath": {
+          "type": "string",
+          "markdownDescription": "Node executable used to spawn dsh. Default: `node` from PATH. Must be a real Node.js (>= 22) — VS Code's built-in node breaks tsx resolution when running dsh from source.",
+          "scope": "application"
+        },
+        "dsh.permissionMode": {
+          "type": "string",
+          "enum": [
+            "workspace-write",
+            "danger-full-access"
+          ],
+          "default": "workspace-write",
+          "markdownDescription": "Permission preset injected as `DSH_PERMISSION_MODE`. `workspace-write`: read/write the workspace, dangerous commands require approval. `danger-full-access`: no restriction (use at your own risk)."
+        },
+        "dsh.model": {
+          "type": "string",
+          "default": "deepseek-v4-flash",
+          "markdownDescription": "Default model id used for new agent sessions."
+        },
+        "dsh.logLevel": {
+          "type": "string",
+          "enum": [
+            "error",
+            "warn",
+            "info",
+            "debug"
+          ],
+          "default": "info",
+          "markdownDescription": "Extension log verbosity (Output channel: DSH)."
+        },
+        "dsh.ui.mode": {
+          "type": "string",
+          "enum": [
+            "embedded",
+            "native"
+          ],
+          "default": "embedded",
+          "markdownDescription": "Sidebar UI: `embedded` (phase 1) iframes dsh's own Web UI; `native` (phase 2) renders the extension's own chat UI over the JSON-RPC SDK."
+        }
+      }
+    }
+  },
+  "scripts": {
+    "watch": "node esbuild.mjs --watch",
+    "build": "node esbuild.mjs",
+    "package": "npm run build && vsce package",
+    "test": "vitest run"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "@types/react": "^18.3.0",
+    "@types/react-dom": "^18.3.0",
+    "@types/vscode": "^1.85.0",
+    "@vscode/vsce": "^3.9.2",
+    "esbuild": "^0.24.0",
+    "typescript": "^5.7.0",
+    "vitest": "^2.1.0"
+  },
+  "dependencies": {
+    "react": "^18.3.0",
+    "react-dom": "^18.3.0"
+  }
+}

@@ -1,0 +1,163 @@
+/* Phase 2 chat UI styles — VS Code theme variables throughout. */
+
+* { box-sizing: border-box; }
+
+html, body {
+  margin: 0;
+  padding: 0;
+  height: 100%;
+  font-family: var(--vscode-font-family);
+  font-size: var(--vscode-font-size);
+  color: var(--vscode-foreground);
+  background: var(--vscode-sideBar-background);
+}
+
+#root, .app { height: 100%; display: flex; flex-direction: column; }
+
+/* Status strip */
+.status-bar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 8px;
+  font-size: 11px;
+  border-bottom: 1px solid var(--vscode-widget-border, #ccc);
+  flex: none;
+}
+.status-dot.running { color: var(--vscode-testing-iconPassed, #4ec9b0); }
+.status-dot.idle { color: var(--vscode-descriptionForeground); }
+.status-server { margin-left: auto; opacity: 0.7; }
+
+.error-banner {
+  padding: 6px 10px;
+  font-size: 12px;
+  color: var(--vscode-errorForeground);
+  background: color-mix(in srgb, var(--vscode-errorForeground) 12%, transparent);
+  border-bottom: 1px solid var(--vscode-widget-border, #ccc);
+  flex: none;
+}
+
+.app-body { display: flex; flex: 1; min-height: 0; }
+
+/* Session list */
+.session-list {
+  width: 140px;
+  flex: none;
+  border-right: 1px solid var(--vscode-widget-border, #ccc);
+  overflow-y: auto;
+  font-size: 12px;
+}
+.session-list-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 8px;
+  font-weight: 600;
+}
+.new-session {
+  border: none;
+  cursor: pointer;
+  background: var(--vscode-button-background);
+  color: var(--vscode-button-foreground);
+  border-radius: 3px;
+  width: 20px; height: 20px;
+  line-height: 1;
+}
+.session-node {
+  display: block;
+  width: 100%;
+  text-align: left;
+  border: none;
+  background: none;
+  color: var(--vscode-foreground);
+  padding: 4px 8px;
+  cursor: pointer;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.session-node:hover { background: var(--vscode-list-hoverBackground); }
+.session-node.active { background: var(--vscode-list-activeSelectionBackground); color: var(--vscode-list-activeSelectionForeground); }
+.session-subcount { opacity: 0.6; margin-left: 4px; }
+.session-empty { padding: 8px; opacity: 0.6; }
+
+/* Chat pane */
+.chat-pane { flex: 1; display: flex; flex-direction: column; min-width: 0; }
+
+.message-list { flex: 1; overflow-y: auto; padding: 8px; display: flex; flex-direction: column; gap: 8px; }
+.message-empty { opacity: 0.6; font-size: 12px; text-align: center; margin-top: 24px; }
+
+.message { max-width: 92%; }
+.message.user { align-self: flex-end; }
+.message.assistant { align-self: flex-start; }
+.bubble {
+  padding: 8px 10px;
+  border-radius: 8px;
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-size: 13px;
+  line-height: 1.5;
+}
+.message.user .bubble { background: var(--vscode-button-background); color: var(--vscode-button-foreground); }
+.message.assistant .bubble { background: var(--vscode-editor-background); border: 1px solid var(--vscode-widget-border, #ccc); }
+
+.message.meta { align-self: center; font-size: 11px; opacity: 0.6; }
+
+/* Tool card */
+.tool-card {
+  align-self: stretch;
+  border: 1px solid var(--vscode-widget-border, #ccc);
+  border-radius: 6px;
+  font-size: 12px;
+  overflow: hidden;
+}
+.tool-card-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  border: none;
+  background: var(--vscode-editor-background);
+  color: var(--vscode-foreground);
+  padding: 4px 8px;
+  cursor: pointer;
+  text-align: left;
+}
+.tool-icon { width: 16px; text-align: center; }
+.tool-icon.error { color: var(--vscode-errorForeground); }
+.tool-name { font-weight: 600; flex: 1; }
+.tool-toggle { opacity: 0.5; }
+.tool-args {
+  margin: 0;
+  padding: 6px 10px;
+  font-size: 11px;
+  overflow-x: auto;
+  background: var(--vscode-textCodeBlock-background);
+}
+.tool-error { padding: 4px 10px; color: var(--vscode-errorForeground); }
+
+/* Composer */
+.composer { flex: none; padding: 8px; border-top: 1px solid var(--vscode-widget-border, #ccc); }
+.composer textarea {
+  width: 100%;
+  resize: none;
+  border: 1px solid var(--vscode-input-border, #555);
+  border-radius: 6px;
+  padding: 8px;
+  background: var(--vscode-input-background);
+  color: var(--vscode-input-foreground);
+  font-family: inherit;
+  font-size: 13px;
+}
+.composer textarea:focus { outline: none; border-color: var(--vscode-focusBorder); }
+.composer-actions { display: flex; justify-content: flex-end; margin-top: 6px; gap: 6px; }
+.composer-actions button {
+  border: none;
+  border-radius: 4px;
+  padding: 4px 14px;
+  cursor: pointer;
+  font-size: 12px;
+}
+.send { background: var(--vscode-button-background); color: var(--vscode-button-foreground); }
+.send:disabled { opacity: 0.5; cursor: default; }
+.stop { background: var(--vscode-errorForeground); color: var(--vscode-button-foreground); }
