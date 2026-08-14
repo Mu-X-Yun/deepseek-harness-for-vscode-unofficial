@@ -23,7 +23,7 @@ import type { RuntimeLaunch } from './runtimeDetect.ts'
 
 export type ServerState =
   | { kind: 'stopped' }
-  | { kind: 'installing'; note?: string }
+  | { kind: 'installing'; note?: string; startedAt?: number }
   | { kind: 'starting' }
   | { kind: 'running'; url: string; port: number }
   | { kind: 'failed'; reason: string }
@@ -85,6 +85,8 @@ export class DshServerManager implements vscode.Disposable {
   private moduleRetryUsed = false
   /** Fires when installation has been running unusually long. */
   private installTimer: NodeJS.Timeout | undefined
+  /** Real installation start time (survives webview rebuilds via the state). */
+  private installStartedAt: number | undefined
 
   /** Emits on every state transition. */
   readonly onDidChangeState: vscode.Event<ServerState> = this.emitter.event
@@ -125,7 +127,8 @@ export class DshServerManager implements vscode.Disposable {
     // Report installation progress distinctly from server startup.
     if (this.opts.ensureRuntime !== undefined) {
       this.armInstallTimeout()
-      this.setState({ kind: 'installing' })
+      this.installStartedAt = Date.now()
+      this.setState({ kind: 'installing', startedAt: this.installStartedAt })
       await this.opts.ensureRuntime()
       clearTimeout(this.installTimer)
       this.installTimer = undefined
@@ -395,6 +398,7 @@ export class DshServerManager implements vscode.Disposable {
       const cwd = this.opts.launch().cwd
       this.setState({
         kind: 'installing',
+        startedAt: this.installStartedAt,
         note:
           '安装耗时较长。可自行安装后点击重试：\n' +
           `npm install --prefix "${cwd}" @deepseek-ai/dsh`,

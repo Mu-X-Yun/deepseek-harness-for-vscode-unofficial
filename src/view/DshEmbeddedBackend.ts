@@ -215,7 +215,11 @@ export class DshEmbeddedBackend implements ChatBackend {
         frame.removeAttribute('src')
         // Persist the start time across poll re-pushes (every 15s the host
         // re-sends the installing state; without this the timer resets).
-        if (installStartedAt === null) installStartedAt = Date.now()
+        // Prefer the host-provided start time: a webview rebuild (switching
+        // sidebar views) resets this script's local variable, but the real
+        // installation time survives in the state.
+        if (s.startedAt !== undefined) installStartedAt = s.startedAt
+        else if (installStartedAt === null) installStartedAt = Date.now()
         showOverlay('正在安装 DeepSeek Harness…（首次需要下载，请耐心等待）')
         installNote.classList.toggle('visible', !!s.note)
         installNote.textContent = s.note || ''
