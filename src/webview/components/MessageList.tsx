@@ -24,8 +24,13 @@ function MessageItem({ item }: { item: UiItem }): JSX.Element {
   switch (item.role) {
     case 'user':
       return <div className="message user"><div className="bubble">{item.text ?? ''}</div></div>
-    case 'assistant':
-      return <div className="message assistant"><div className="bubble">{item.text ?? ''}</div></div>
+    case 'assistant': {
+      // Reasoning-only replies (interrupted/max-token steps) fall back to the
+      // reasoning text so the row is never blank.
+      const text = item.text ?? item.reasoning
+      const reasoningOnly = item.text === undefined && item.reasoning !== undefined
+      return <div className="message assistant"><div className={`bubble${reasoningOnly ? ' reasoning' : ''}`}>{text ?? ''}</div></div>
+    }
     case 'tool':
       return <ToolCard item={item} />
     default:

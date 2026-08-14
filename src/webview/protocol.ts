@@ -6,18 +6,12 @@
  *   webview: ready → host: extensionReady { … }
  */
 
+import type { RenderableEvent } from './eventRenderer.ts'
+
 /** One server notification as received off the wire (SDK HarnessNotification). */
 export interface WireNotification {
   method: string
   params: Record<string, unknown>
-}
-
-/** A session event as rendered by the host (see eventRenderer). */
-export interface RenderedEvent {
-  /** Event type, e.g. `assistant/message`. */
-  type: string
-  /** Event payload fields of interest, copied verbatim. */
-  [key: string]: unknown
 }
 
 export interface SessionMeta {
@@ -40,6 +34,7 @@ export type HostToWebviewMessage =
   | { type: 'extensionReady'; serverState: 'idle' | 'starting' | 'running' | 'failed' | 'stopped'; sessions: SessionMeta[] }
   | { type: 'status'; state: 'idle' | 'running' }
   | { type: 'notification'; n: WireNotification }
-  | { type: 'sessionSnapshot'; sessionId: string; events: RenderedEvent[] }
+  | { type: 'sessionSnapshot'; sessionId: string; events: RenderableEvent[] }
+  | { type: 'sessionEvent'; sessionId: string; event: RenderableEvent }
   | { type: 'sessionsUpdated'; sessions: SessionMeta[] }
   | { type: 'error'; message: string }

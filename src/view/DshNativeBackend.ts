@@ -4,8 +4,10 @@
  * Message flow:
  *   webview ready → extensionReady {sessions}
  *   webview prompt → SessionManager.prompt (lazy runtime start + handshake)
- *   SessionManager notifications → forwarded to every live webview
- *   webview selectSession → sessionSnapshot (buffered events replayed)
+ *   SessionManager notifications → session.event forwarded per event
+ *   (sessionEvent) to every live webview; the webview folds and dedups
+ *   webview selectSession → sessionSnapshot (buffered events replayed;
+ *   the webview dedups by seq, so re-selecting a streamed session is a no-op)
  *
  * Multiple webviews (primary + secondary sidebar) share this backend;
  * replies are broadcast to all live views.
@@ -14,6 +16,7 @@
 import * as vscode from 'vscode'
 import type { ChatBackend } from './DshChatBackend.ts'
 import type { SessionManager } from '../sdk/SessionManager.ts'
+import type { RenderableEvent } from '../webview/eventRenderer.ts'
 import type { HostToWebviewMessage } from '../webview/protocol.ts'
 
 interface Incoming {
@@ -106,10 +109,13 @@ export class DshNativeBackend implements ChatBackend {
       return
     }
     if (method === 'session.event') {
-      // Send the individual event so the UI can stream; full snapshots are
-      // replayed on selectSession.
-      const buffer = this.sessions.snapshot(sessionId)
-      this.broadcast({ type: 'sessionSnapshot', sessionId, events: buffer.slice(-1) })
+      // Forward the individual wire event (O(1), no buffer copy); the webview
+      // accumulates it and folds chunks itself. Full snapshots are only
+      // replayed on selectSession, where the webview dedups by seq.
+      const parsed = params.event
+      if (parsed !== null && typeof parsed === 'object') {
+        this.broadcast({ type: 'sessionEvent', sessionId, event: parsed as unknown as RenderableEvent })
+      }
       return
     }
     this.broadcast({ type: 'notification', n: { method, params } })

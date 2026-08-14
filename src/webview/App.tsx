@@ -6,11 +6,10 @@
 import { useCallback, useEffect, useReducer, useRef } from 'react'
 import type {
   HostToWebviewMessage,
-  RenderedEvent,
   SessionMeta,
   WebviewToHostMessage,
 } from './protocol.ts'
-import { renderEvents, type UiItem } from './eventRenderer.ts'
+import { renderEvents, type RenderableEvent, type UiItem } from './eventRenderer.ts'
 import { MessageList } from './components/MessageList.tsx'
 import { Composer } from './components/Composer.tsx'
 import { SessionList } from './components/SessionList.tsx'
@@ -33,7 +32,7 @@ type Action =
   | { type: 'status'; state: 'idle' | 'running' }
   | { type: 'sessions'; sessions: SessionMeta[] }
   | { type: 'active'; sessionId: string }
-  | { type: 'append'; sessionId: string; items: UiItem[] }
+  | { type: 'items'; sessionId: string; items: UiItem[] }
   | { type: 'error'; message: string }
 
 function reduce(state: ChatState, action: Action): ChatState {
@@ -46,9 +45,11 @@ function reduce(state: ChatState, action: Action): ChatState {
       return { ...state, sessions: action.sessions }
     case 'active':
       return { ...state, activeSessionId: action.sessionId }
-    case 'append': {
+    case 'items': {
+      // renderEvents is incremental and seq-deduping, so the full (possibly
+      // replayed) item list replaces the session's previous one.
       const next = new Map(state.itemsBySession)
-      next.set(action.sessionId, [...(next.get(action.sessionId) ?? []), ...action.items])
+      next.set(action.sessionId, action.items)
       return { ...state, itemsBySession: next }
     }
     case 'error':
@@ -75,6 +76,17 @@ declare function acquireVsCodeApi(): {
 export function App(): JSX.Element {
   const [state, dispatch] = useReducer(reduce, initialState)
   const vscodeRef = useRef<ReturnType<typeof acquireVsCodeApi>>()
+  // Rendered items per session, mirrored outside React state so the message
+  // listener (registered once) can feed renderEvents incrementally.
+  const itemsRef = useRef<Map<string, UiItem[]>>(new Map())
+
+  const applyEvents = useCallback((sessionId: string, events: RenderableEvent[]): void => {
+    const prev = itemsRef.current.get(sessionId) ?? []
+    const items = renderEvents(events, prev)
+    if (items.length === prev.length) return // nothing new (seq-deduped)
+    itemsRef.current = new Map(itemsRef.current).set(sessionId, items)
+    dispatch({ type: 'items', sessionId, items })
+  }, [])
 
   useEffect(() => {
     vscodeRef.current = acquireVsCodeApi()
@@ -91,14 +103,17 @@ export function App(): JSX.Element {
         case 'sessionsUpdated':
           dispatch({ type: 'sessions', sessions: msg.sessions })
           break
-        case 'sessionSnapshot': {
-          const items = renderEvents(msg.events)
-          dispatch({ type: 'append', sessionId: msg.sessionId, items })
+        case 'sessionEvent':
+          // One wire event (the live path): fold it into the session's items.
+          applyEvents(msg.sessionId, [msg.event])
           break
-        }
+        case 'sessionSnapshot':
+          // Full replay (selectSession): renderEvents dedups by seq, so
+          // re-selecting an already-streamed session adds nothing.
+          applyEvents(msg.sessionId, msg.events)
+          break
         case 'notification':
-          // Live wire notifications are buffered host-side into snapshots;
-          // the host forwards them here for latency-critical streaming.
+          // Other wire notifications are handled host-side; nothing to do.
           break
         case 'error':
           dispatch({ type: 'error', message: msg.message })
@@ -107,7 +122,7 @@ export function App(): JSX.Element {
     }
     window.addEventListener('message', onMessage)
     return () => window.removeEventListener('message', onMessage)
-  }, [])
+  }, [applyEvents])
 
   const send = useCallback(
     (text: string) => {
