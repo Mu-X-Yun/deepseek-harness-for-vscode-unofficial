@@ -22,7 +22,23 @@
 
 - VS Code `^1.85.0`
 - Node.js `^22.19 || >=24`（dsh 的引擎要求）
-- pnpm（构建 dsh 源码时需要）
+- pnpm（仅 repo 模式：构建 dsh 源码时需要）
+
+## 获取 dsh 运行时（三选一）
+
+插件通过 `dsh.runtime.mode` 决定 dsh 运行时的来源：
+
+| 模式 | 说明 | 适合 |
+|---|---|---|
+| `repo`（默认） | 从 `deepseek-harness-master` 源码检出运行 | 开发/调试 dsh 本身 |
+| `installed` | **自动探测**已安装的 dsh：全局安装（`npm i -g @deepseek-ai/dsh`）或 npx 缓存（跑过一次 `npx @deepseek-ai/dsh web` 即可）；`dsh.runtime.path` 可显式指定 | 已装过 dsh 的普通用户 |
+| `auto-install` | 首次启动自动 `npm install @deepseek-ai/dsh` 到扩展存储 | 不想装任何东西的用户 |
+
+普通用户推荐：`dsh.runtime.mode: installed` + 全局安装一次：
+```sh
+npm i -g @deepseek-ai/dsh
+```
+或者完全不装 + `auto-install` 模式（首次启动自动下载）。
 
 ## 开发环境（repo 模式）
 

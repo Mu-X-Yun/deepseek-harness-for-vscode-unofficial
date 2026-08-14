@@ -6,10 +6,15 @@
  * chat survives hiding the view and is cleaned up on extension deactivate.
  */
 
+import { execFile } from 'node:child_process'
+import { join } from 'node:path'
 import * as vscode from 'vscode'
 import { buildEnv, defaultRepoPath, loadConfig, type DshConfig } from './config.ts'
 import {
   DshServerManager,
+  dshBinIn,
+  findInstalledDsh,
+  hasDshBin,
   installedLaunch,
   repoInstalled,
   repoLaunch,
@@ -37,15 +42,18 @@ export function activate(context: vscode.ExtensionContext): void {
   // require restarting the extension.
   const readConfig = (): DshConfig => loadConfig(() => vscode.workspace.getConfiguration('dsh'))
 
-  const resolveRuntime = (): { launch: RuntimeLaunch; preflight: () => string[] } => {
+  const resolveRuntime = (): { launch: RuntimeLaunch; preflight: () => string[]; ensureRuntime?: () => Promise<void> } => {
     const config = readConfig()
     switch (config.runtimeMode) {
       case 'installed': {
-        const runtimePath = config.runtimePath
+        const runtimePath = findInstalledDsh(config.runtimePath)
         if (runtimePath === undefined) {
+          const hint = config.runtimePath === undefined
+            ? 'No installed dsh found. Run `npm i -g @deepseek-ai/dsh` (or use `npx @deepseek-ai/dsh web` once), or set dsh.runtime.path.'
+            : `No dsh at ${config.runtimePath} (expected ${dshBinIn(config.runtimePath)}).`
           return {
-            launch: installedLaunch(runtimePath ?? '', config.nodePath),
-            preflight: () => ['dsh.runtime.path must be set for installed mode.'],
+            launch: installedLaunch(config.runtimePath ?? '', config.nodePath),
+            preflight: () => [hint],
           }
         }
         return {
@@ -53,11 +61,23 @@ export function activate(context: vscode.ExtensionContext): void {
           preflight: () => [],
         }
       }
-      case 'auto-install':
+      case 'auto-install': {
+        const runtimeRoot = join(context.globalStorageUri.fsPath, 'runtime')
         return {
-          launch: installedLaunch(context.globalStorageUri.fsPath, config.nodePath),
-          preflight: () => ['auto-install mode is not implemented yet; use repo mode.'],
+          launch: installedLaunch(runtimeRoot, config.nodePath),
+          ensureRuntime: async () => {
+            if (hasDshBin(runtimeRoot)) return
+            logChannel?.appendLine(`[info] installing @deepseek-ai/dsh into ${runtimeRoot}…`)
+            await new Promise<void>((resolve, reject) => {
+              execFile('npm', ['install', '--prefix', runtimeRoot, '@deepseek-ai/dsh'], { windowsHide: true, timeout: 600_000 }, (err) => {
+                if (err) reject(new Error(`npm install @deepseek-ai/dsh failed: ${err.message}`))
+                else resolve()
+              })
+            })
+          },
+          preflight: () => hasDshBin(runtimeRoot) ? [] : ['dsh runtime is not installed yet (auto-install pending).'],
         }
+      }
       case 'repo':
       default: {
         const repoPath = config.runtimePath ?? defaultRepoPath(extensionDir)
@@ -90,6 +110,9 @@ export function activate(context: vscode.ExtensionContext): void {
     launch: () => resolveRuntime().launch,
     env: () => buildEnv(process.env, readConfig()),
     preflight: () => resolveRuntime().preflight(),
+    ensureRuntime: async () => {
+      await resolveRuntime().ensureRuntime?.()
+    },
     log: (level, message) => logChannel?.appendLine(`[${level}] ${message}`),
   })
 

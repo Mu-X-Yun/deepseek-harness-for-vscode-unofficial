@@ -17,6 +17,7 @@ import { join } from 'node:path'
 import * as vscode from 'vscode'
 import { findReadyUrl, type ReadyLine } from './portParser.ts'
 import type { DshConfig } from '../config.ts'
+export { dshBinIn, findInstalledDsh, globalNpmRoot, hasDshBin, npxCacheDsh } from './runtimeDetect.ts'
 
 export type ServerState =
   | { kind: 'stopped' }
@@ -37,6 +38,8 @@ export interface DshServerManagerOptions {
   log: (level: 'info' | 'warn' | 'error' | 'debug', message: string) => void
   /** Ready-line timeout in ms (first boot of a fresh profile is slow on Windows). */
   readyTimeoutMs?: number
+  /** Optional async preparation (e.g. auto-installing the runtime) before preflight/spawn. */
+  ensureRuntime?: () => Promise<void>
 }
 
 export interface RuntimeLaunch {
@@ -95,6 +98,7 @@ export class DshServerManager implements vscode.Disposable {
       const settled = this.state
       if (settled.kind === 'running') return settled.url
     }
+    await this.opts.ensureRuntime?.()
     const problems = this.opts.preflight()
     if (problems.length > 0) {
       this.setFailed(problems.join(' '))
@@ -320,3 +324,4 @@ export function installedLaunch(runtimePath: string, nodePath?: string): Runtime
     cwd: runtimePath,
   }
 }
+
