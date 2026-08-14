@@ -114,6 +114,30 @@ export function installedLaunch(runtimePath: string, nodePath: string | undefine
 /** The sharp version pinned by the extension (0.35.3 is a broken release). */
 export const SHARP_PIN = '0.35.2'
 
+/**
+ * Files that must exist after an install; their absence means the install
+ * pulled from a corrupt npm cache (a recurring flaky-network symptom).
+ */
+const RUNTIME_ESSENTIALS: ReadonlyArray<readonly [string, string]> = [
+  ['@deepseek-ai/dsh', 'lib/bin.js'],
+  ['commander', 'index.js'],
+  ['@deepseek-ai/cordis', 'index.js'],
+  ['typebox', 'build/type/action/module.mjs'],
+]
+
+/** Returns the essential files missing under a node_modules root (empty = healthy). */
+export function missingRuntimeFiles(runtimePath: string): string[] {
+  const missing: string[] = []
+  for (const [pkg, file] of RUNTIME_ESSENTIALS) {
+    try {
+      accessSync(join(runtimePath, 'node_modules', pkg, file))
+    } catch {
+      missing.push(`${pkg}/${file}`)
+    }
+  }
+  return missing
+}
+
 /** Reads the installed sharp version under a node_modules root, or undefined. */
 export function sharpVersion(runtimePath: string): string | undefined {
   try {

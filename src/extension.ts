@@ -24,6 +24,7 @@ import {
   sharpVersion,
   webDistBuilt,
   type RuntimeLaunch,
+  missingRuntimeFiles,
 } from './server/DshServerManager.ts'
 import { DshChatViewProvider } from './view/DshChatViewProvider.ts'
 import { DshEmbeddedBackend } from './view/DshEmbeddedBackend.ts'
@@ -83,7 +84,11 @@ export function activate(context: vscode.ExtensionContext): void {
       }
       case 'auto-install': {
         const runtimeRoot = join(context.globalStorageUri.fsPath, 'runtime')
-        const install = (): Promise<void> => new Promise<void>((resolve, reject) => {
+        // A fresh cache dir for self-heal reinstalls: the user's global npm
+        // cache can hold corrupt entries (flaky-network downloads), which
+        // reproduce missing files on every reinstall.
+        const freshCache = join(context.globalStorageUri.fsPath, 'npm-cache')
+        const install = (extraArgs: string[] = []): Promise<void> => new Promise<void>((resolve, reject) => {
           // shell: true is required on Windows: .cmd shims (npm.cmd) cannot
           // be launched directly via CreateProcess and fail with EINVAL.
           // Shell mode concatenates args without escaping, so quote any
@@ -91,7 +96,7 @@ export function activate(context: vscode.ExtensionContext): void {
           // log channel so the user can watch install progress.
           const child = execFile(
             npmCommand(),
-            ['install', '--prefix', shellQuote(runtimeRoot), '@deepseek-ai/dsh'],
+            ['install', '--prefix', shellQuote(runtimeRoot), '@deepseek-ai/dsh', ...extraArgs],
             { shell: true, windowsHide: true, timeout: 600_000, maxBuffer: 16 * 1024 * 1024 },
             (err) => {
               if (err) reject(new Error(`npm install @deepseek-ai/dsh failed: ${err.message}`))
@@ -128,14 +133,22 @@ export function activate(context: vscode.ExtensionContext): void {
           },
           onModuleMissing: async () => {
             // Flaky-network installs can leave partial packages; clear the
-            // module tree (keeping the overrides package.json) and reinstall.
+            // module tree (keeping the overrides package.json) and reinstall
+            // from a FRESH npm cache — the user's global cache may itself
+            // hold corrupt entries that reproduce the missing files.
             rmSync(join(runtimeRoot, 'node_modules'), { recursive: true, force: true })
             try {
-              await install()
-              return true
+              await install(['--cache', shellQuote(freshCache)])
             } catch {
               return false
             }
+            // Verify the install actually produced the essential files.
+            const missing = missingRuntimeFiles(runtimeRoot)
+            if (missing.length > 0) {
+              logChannel?.appendLine(`[error] reinstall still missing: ${missing.join(', ')}`)
+              return false
+            }
+            return true
           },
         }
       }
