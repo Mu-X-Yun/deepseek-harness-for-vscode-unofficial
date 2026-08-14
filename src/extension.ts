@@ -69,7 +69,11 @@ export function activate(context: vscode.ExtensionContext): void {
             if (hasDshBin(runtimeRoot)) return
             logChannel?.appendLine(`[info] installing @deepseek-ai/dsh into ${runtimeRoot}…`)
             await new Promise<void>((resolve, reject) => {
-              execFile(npmCommand(), ['install', '--prefix', runtimeRoot, '@deepseek-ai/dsh'], { windowsHide: true, timeout: 600_000 }, (err) => {
+              // shell: true is required on Windows: .cmd shims (npm.cmd) cannot
+              // be launched directly via CreateProcess and fail with EINVAL.
+              // Shell mode concatenates args without escaping, so quote any
+              // path that could contain spaces.
+              execFile(npmCommand(), ['install', '--prefix', shellQuote(runtimeRoot), '@deepseek-ai/dsh'], { shell: true, windowsHide: true, timeout: 600_000 }, (err) => {
                 if (err) reject(new Error(`npm install @deepseek-ai/dsh failed: ${err.message}`))
                 else resolve()
               })
@@ -239,6 +243,14 @@ function messageOf(err: unknown): string {
  */
 function npmCommand(): string {
   return process.platform === 'win32' ? 'npm.cmd' : 'npm'
+}
+
+/**
+ * Quotes a path for shell-mode command lines (shell concatenates args
+ * without escaping; spaces would split the token).
+ */
+function shellQuote(path: string): string {
+  return /[\s"']/.test(path) ? `"${path.replace(/"/g, '\\"')}"` : path
 }
 
 /** Handler for `dsh.addWorkspace`: adopt the current VS Code workspace folder. */

@@ -48,7 +48,8 @@ export function npmCommand(): string {
 /** Runs `npm root -g` to locate the global node_modules root. */
 export function globalNpmRoot(): string | undefined {
   try {
-    const out = execFileSync(npmCommand(), ['root', '-g'], { encoding: 'utf8', windowsHide: true, timeout: 15_000 })
+    // shell: true — .cmd shims (npm.cmd) fail with EINVAL via CreateProcess.
+    const out = execFileSync(npmCommand(), ['root', '-g'], { encoding: 'utf8', windowsHide: true, timeout: 15_000, shell: true })
     const root = out.trim()
     return root.length > 0 ? root : undefined
   } catch {
