@@ -32,6 +32,8 @@ export interface DshConfig {
   model: string
   /** Web server port (0 = random; default 3080). */
   port: number | undefined
+  /** npm registry for auto-install (e.g. a mirror for faster downloads). */
+  registry: string | undefined
   logLevel: string
   /** Sidebar UI flavor. */
   uiMode: UiMode
@@ -52,6 +54,7 @@ export function loadConfig(get: () => vscode.WorkspaceConfiguration): DshConfig 
     permissionMode: readString(cfg, 'permissionMode') ?? 'workspace-write',
     model: readString(cfg, 'model') ?? 'deepseek-v4-flash',
     port: cfg.get<number>('runtime.port'),
+    registry: readString(cfg, 'runtime.registry'),
     logLevel: readString(cfg, 'logLevel') ?? 'info',
     uiMode: (readString(cfg, 'ui.mode') as UiMode | undefined) ?? 'embedded',
   }

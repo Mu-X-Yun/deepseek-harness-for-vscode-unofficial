@@ -83,6 +83,7 @@ npm i -g @deepseek-ai/dsh   # 然后设 dsh.runtime.mode: installed
 | `dsh.runtime.mode` | `auto-install` | `auto-install`（自动安装）/ `installed`（探测全局/npx）/ `repo`（源码检出） |
 | `dsh.runtime.path` | 自动探测 | runtime 绝对路径（repo 检出目录或含 dsh 的 node_modules 根） |
 | `dsh.runtime.nodePath` | `node`（PATH） | 用于 spawn dsh 的 Node 可执行文件。**必须用系统 Node**（`process.execPath` 在扩展宿主里指向 Code.exe，其内置 node 会破坏 tsx 的 tsconfig-paths 解析） |
+| `dsh.runtime.registry` | （官方源） | npm 镜像源（如 `https://registry.npmmirror.com`），可加速首次安装 |
 | `dsh.runtime.port` | `3080` | dsh web 端口；`0` = 随机（3080 被占用时自动回退） |
 | `dsh.permissionMode` | `workspace-write` | 注入为 `DSH_PERMISSION_MODE` |
 | `dsh.model` | `deepseek-v4-flash` | 新会话默认模型 |

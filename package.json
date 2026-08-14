@@ -108,6 +108,10 @@
           "default": "workspace-write",
           "markdownDescription": "Permission preset injected as `DSH_PERMISSION_MODE`. `workspace-write`: read/write the workspace, dangerous commands require approval. `danger-full-access`: no restriction (use at your own risk)."
         },
+        "dsh.runtime.registry": {
+          "type": "string",
+          "markdownDescription": "npm registry for auto-installing the dsh runtime. Leave empty for the default; a faster mirror (e.g. https://registry.npmmirror.com) can speed up first install."
+        },
         "dsh.runtime.port": {
           "type": "number",
           "default": 3080,
