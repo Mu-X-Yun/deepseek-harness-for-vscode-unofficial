@@ -251,9 +251,16 @@ export function activate(context: vscode.ExtensionContext): void {
   }
 }
 
-export function deactivate(): void {
-  void sessions?.dispose()
-  void server?.dispose()
+/**
+ * Awaits full teardown of the dsh child processes. On window reload VS Code
+ * waits for this promise; leaving children running would let the next
+ * activation's spawn collide with the old process.
+ */
+export function deactivate(): Promise<void> {
+  const tasks: Promise<void>[] = []
+  if (sessions !== undefined) tasks.push(sessions.dispose())
+  if (server !== undefined) tasks.push(server.dispose())
+  return Promise.all(tasks).then(() => {})
 }
 
 function messageOf(err: unknown): string {

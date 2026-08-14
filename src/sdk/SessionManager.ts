@@ -155,8 +155,9 @@ export class SessionManager implements vscode.Disposable {
     return `session-${crypto.randomUUID().replaceAll('-', '').slice(0, 24)}`
   }
 
-  dispose(): void {
-    void this.stopAgent()
+  /** Closes the runtime; settles when the child has exited (awaited on reload). */
+  dispose(): Promise<void> {
+    return this.stopAgent()
   }
 
   // ------------------------------------------------------------------ //

@@ -135,9 +135,16 @@ export class DshServerManager implements vscode.Disposable {
     this.setState({ kind: 'stopped' })
   }
 
-  dispose(): void {
-    void this.stop()
+  /**
+   * Stops the server and settles when the child has exited. Returning a
+   * promise matters on window reload: VS Code awaits `deactivate`, and if
+   * the dsh child is still running here it would collide with the next
+   * activation's spawn (concurrent writes to $DSH_HOME, stuck startup).
+   */
+  dispose(): Promise<void> {
+    const stopped = this.stop()
     this.emitter.dispose()
+    return stopped
   }
 
   // ------------------------------------------------------------------ //
