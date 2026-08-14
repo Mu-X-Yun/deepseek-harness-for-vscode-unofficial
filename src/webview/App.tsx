@@ -79,11 +79,21 @@ export function App(): JSX.Element {
   // Rendered items per session, mirrored outside React state so the message
   // listener (registered once) can feed renderEvents incrementally.
   const itemsRef = useRef<Map<string, UiItem[]>>(new Map())
+  // Seq numbers already rendered per session. Kept apart from the items:
+  // compaction removes shadowed items, but their seqs must remain known so
+  // re-selecting the session does not re-append the raw history.
+  const seenSeqsRef = useRef<Map<string, Set<number>>>(new Map())
 
   const applyEvents = useCallback((sessionId: string, events: RenderableEvent[]): void => {
     const prev = itemsRef.current.get(sessionId) ?? []
-    const items = renderEvents(events, prev)
-    if (items.length === prev.length) return // nothing new (seq-deduped)
+    const seen = seenSeqsRef.current.get(sessionId) ?? new Set<number>()
+    const items = renderEvents(events, prev, seen)
+    seenSeqsRef.current = new Map(seenSeqsRef.current).set(sessionId, seen)
+    // Length alone is not a change signal: streaming chunks grow the text of
+    // an existing item and assistant/message supersedes the streaming item
+    // with the same length. renderEvents preserves references of untouched
+    // items, so an element-wise identity compare is exact and cheap.
+    if (prev.length === items.length && prev.every((it, i) => it === items[i])) return // nothing new (seq-deduped)
     itemsRef.current = new Map(itemsRef.current).set(sessionId, items)
     dispatch({ type: 'items', sessionId, items })
   }, [])

@@ -35,6 +35,14 @@ function chunk(seq: number, turn: number, step: number, text: string): Renderabl
   return ev(seq, 'assistant/chunk', { turn, step, chunk: { type: 'text-delta', index: 0, text } })
 }
 
+/** Compaction checkpoint replacing the seq span [4..84]. */
+const checkpoint = ev(
+  90,
+  'assistant/message',
+  { turn: 2, step: 1, message: { role: 'assistant', content: [{ type: 'text', text: 'compacted' }] } },
+  { surfaceOp: { op: 'replace', start: 4, end: 84 } },
+)
+
 describe('renderEvent', () => {
   it('renders user messages from data.content (wire envelope shape)', () => {
     const item = renderEvent(userEvent, 0)
@@ -139,34 +147,98 @@ describe('renderEvents', () => {
   })
 
   it('dedups by seq so replaying a snapshot over live items is a no-op', () => {
+    // The webview persists one seenSeqs set per session across calls.
+    const seen = new Set<number>()
     let items: ReturnType<typeof renderEvents> = []
-    items = renderEvents([userEvent, assistantEvent], items)
-    const replay = renderEvents([userEvent, assistantEvent], items)
+    items = renderEvents([userEvent, assistantEvent], items, seen)
+    const replay = renderEvents([userEvent, assistantEvent], items, seen)
     expect(replay).toHaveLength(items.length)
     expect(replay).toEqual(items)
   })
 
   it('re-selecting an already-streamed session adds nothing (full-buffer replay)', () => {
     // Live path streamed user + chunks + message one event at a time.
+    const seen = new Set<number>()
     let items: ReturnType<typeof renderEvents> = []
     for (const e of [userEvent, chunk(80, 1, 1, 'hel'), chunk(81, 1, 1, 'lo'), assistantEvent]) {
-      items = renderEvents([e], items)
+      items = renderEvents([e], items, seen)
     }
     // selectSession replays the whole buffer: the same events in one call.
-    const replay = renderEvents([userEvent, chunk(80, 1, 1, 'hel'), chunk(81, 1, 1, 'lo'), assistantEvent], items)
+    const replay = renderEvents([userEvent, chunk(80, 1, 1, 'hel'), chunk(81, 1, 1, 'lo'), assistantEvent], items, seen)
     expect(replay).toHaveLength(items.length)
     expect(replay).toEqual(items)
   })
 
-  it('applies compaction surfaceOp replace by removing shadowed surface nodes', () => {
+  it('applies compaction surfaceOp replace by removing the shadowed seq span', () => {
+    // Wire semantics: replace start/end are SEQ numbers of surface events
+    // (packages/core/session/src/surface.ts resolves via nodes.indexOf).
     const items = renderEvents([
-      userEvent,
-      assistantEvent,
-      // Compaction emits a new assistant/message replacing surface nodes 0..1.
-      ev(90, 'assistant/message', { turn: 2, step: 1, message: { role: 'assistant', content: [{ type: 'text', text: 'compacted summary' }] } }, { surfaceOp: { op: 'replace', start: 0, end: 1 } }),
+      userEvent, // seq 4
+      assistantEvent, // seq 84
+      ev(90, 'assistant/message', { turn: 2, step: 1, message: { role: 'assistant', content: [{ type: 'text', text: 'compacted summary' }] } }, { surfaceOp: { op: 'replace', start: 4, end: 84 } }),
     ])
     expect(items.map((i) => i.role)).toEqual(['assistant'])
     expect(items[0]?.text).toBe('compacted summary')
+  })
+
+  it('removes every item inside the shadowed seq span (tool cards, turn markers)', () => {
+    const items = renderEvents([
+      userEvent, // seq 4
+      ev(10, 'turn/start', { turn: 1 }), // seq 10 — meta inside the span
+      ev(5, 'tool/call', { callId: 'c1', name: 'bash', arguments: '{}' }), // seq 5 — tool card inside the span
+      assistantEvent, // seq 84
+      // Replace the whole span; everything with seq in [4..84] is shadowed.
+      ev(90, 'assistant/message', { turn: 2, step: 1, message: { role: 'assistant', content: [{ type: 'text', text: 'compacted' }] } }, { surfaceOp: { op: 'replace', start: 4, end: 84 } }),
+    ])
+    expect(items.map((i) => i.role)).toEqual(['assistant'])
+    expect(items[0]?.text).toBe('compacted')
+  })
+
+  it('skips replacement when surfaceOp replace points outside the rendered range', () => {
+    const items = renderEvents([
+      userEvent,
+      ev(90, 'assistant/message', { turn: 2, step: 1, message: { role: 'assistant', content: [{ type: 'text', text: 'x' }] } }, { surfaceOp: { op: 'replace', start: 900, end: 901 } }),
+    ])
+    expect(items.map((i) => i.role)).toEqual(['user', 'assistant'])
+  })
+
+  it('does not re-append raw history when replaying a buffer after a live compaction', () => {
+    // Live path: streamed user + tool + assistant, then compaction replaced
+    // the span with a summary. The seenSeqs set is what the webview persists.
+    const seen = new Set<number>()
+    const buffer = [userEvent, ev(5, 'tool/call', { callId: 'c1', name: 'bash', arguments: '{}' }), assistantEvent]
+    let items: ReturnType<typeof renderEvents> = []
+    for (const e of [...buffer, checkpoint]) items = renderEvents([e], items, seen)
+    expect(items.map((i) => i.role)).toEqual(['assistant'])
+    expect(items[0]?.text).toBe('compacted')
+    // selectSession replays the whole buffer over the live items.
+    const replay = renderEvents([...buffer, checkpoint], items, seen)
+    expect(replay).toHaveLength(items.length)
+    expect(replay).toEqual(items)
+  })
+
+  it('does not append block-end text on top of the accumulated deltas', () => {
+    // The adapter emits deltas as they arrive and block-end with the FULL
+    // block text at [DONE] — appending it would double the bubble.
+    const items = renderEvents([
+      chunk(80, 1, 1, 'Hel'),
+      chunk(81, 1, 1, 'lo'),
+      ev(82, 'assistant/chunk', { turn: 1, step: 1, chunk: { type: 'block-end', index: 0, block: { type: 'text', text: 'Hello' } } }),
+    ])
+    expect(items).toHaveLength(1)
+    expect(items[0]?.text).toBe('Hello')
+  })
+
+  it('does not double-accumulate streaming chunks when a buffer without assistant/message is replayed', () => {
+    // Turn was stopped mid-stream: the buffer holds chunks but no message.
+    const buffer = [chunk(80, 1, 1, 'hel'), chunk(81, 1, 1, 'lo')]
+    let items: ReturnType<typeof renderEvents> = []
+    for (const e of buffer) items = renderEvents([e], items)
+    expect(items[0]?.text).toBe('hello')
+    // selectSession replays the whole buffer again.
+    items = renderEvents(buffer, items)
+    expect(items).toHaveLength(1)
+    expect(items[0]?.text).toBe('hello')
   })
 
   it('skips replacement when surfaceOp replace points outside the rendered range', () => {

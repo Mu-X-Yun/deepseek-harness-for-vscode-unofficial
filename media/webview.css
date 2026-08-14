@@ -100,6 +100,7 @@ html, body {
 }
 .message.user .bubble { background: var(--vscode-button-background); color: var(--vscode-button-foreground); }
 .message.assistant .bubble { background: var(--vscode-editor-background); border: 1px solid var(--vscode-widget-border, #ccc); }
+.message.assistant .bubble.reasoning { font-style: italic; opacity: 0.75; }
 
 .message.meta { align-self: center; font-size: 11px; opacity: 0.6; }
 

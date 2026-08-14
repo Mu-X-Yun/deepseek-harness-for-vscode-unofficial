@@ -7,9 +7,11 @@ import { ToolCard } from './ToolCard.tsx'
 export function MessageList({ items }: { items: UiItem[] }): JSX.Element {
   const bottomRef = useRef<HTMLDivElement>(null)
 
+  // Track `items`, not `items.length`: streamed chunks grow the text of one
+  // item in place, so the length does not change while the bubble grows.
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
-  }, [items.length])
+  }, [items])
 
   return (
     <div className="message-list">
