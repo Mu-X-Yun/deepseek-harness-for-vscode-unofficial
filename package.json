@@ -108,6 +108,11 @@
           "default": "workspace-write",
           "markdownDescription": "Permission preset injected as `DSH_PERMISSION_MODE`. `workspace-write`: read/write the workspace, dangerous commands require approval. `danger-full-access`: no restriction (use at your own risk)."
         },
+        "dsh.runtime.port": {
+          "type": "number",
+          "default": 3080,
+          "markdownDescription": "dsh web server port. 0 = random (used automatically when 3080 is occupied)."
+        },
         "dsh.model": {
           "type": "string",
           "default": "deepseek-v4-flash",

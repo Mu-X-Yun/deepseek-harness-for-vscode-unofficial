@@ -102,11 +102,11 @@ export function nodeCommand(configuredPath: string | undefined): string {
  * Uses `--profile web` (not the `web` alias) so launcher flags are
  * accepted by the release package.
  */
-export function installedLaunch(runtimePath: string, nodePath: string | undefined): RuntimeLaunch {
+export function installedLaunch(runtimePath: string, nodePath: string | undefined, port = 0): RuntimeLaunch {
   const bin = dshBinIn(runtimePath)
   return {
     command: nodeCommand(nodePath),
-    args: [bin, '--profile', 'web', '--port', '0'],
+    args: [bin, '--profile', 'web', '--port', String(port)],
     cwd: runtimePath,
   }
 }

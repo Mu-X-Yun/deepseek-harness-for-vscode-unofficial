@@ -83,6 +83,7 @@ npm i -g @deepseek-ai/dsh   # then set dsh.runtime.mode: installed
 | `dsh.runtime.mode` | `auto-install` | `auto-install` / `installed` (detect global/npx) / `repo` (source checkout) |
 | `dsh.runtime.path` | auto-detect | Absolute runtime path (repo checkout or a node_modules root containing dsh) |
 | `dsh.runtime.nodePath` | `node` (PATH) | Node executable used to spawn dsh. **Must be the system Node** (`process.execPath` points at Code.exe in the extension host, whose bundled node breaks tsx's tsconfig-paths resolution) |
+| `dsh.runtime.port` | `3080` | dsh web port; `0` = random (auto-fallback when 3080 is taken) |
 | `dsh.permissionMode` | `workspace-write` | Injected as `DSH_PERMISSION_MODE` |
 | `dsh.model` | `deepseek-v4-flash` | Default model for new sessions |
 | `dsh.ui.mode` | `embedded` | Sidebar UI: `embedded` (iframe) / `native` (custom chat UI) |

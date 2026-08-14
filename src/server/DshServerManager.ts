@@ -51,6 +51,8 @@ export interface DshServerManagerOptions {
    * force a reinstall and restart; return true when a retry was scheduled.
    */
   onModuleMissing?: () => Promise<boolean>
+  /** Called when the fixed port is already in use; switch to a random port. */
+  onPortConflict?: () => Promise<boolean>
 }
 
 /** Persisted shape of a running dsh server (survives extension reloads). */
@@ -252,6 +254,24 @@ export class DshServerManager implements vscode.Disposable {
       // file inside typebox); surface a one-shot reinstall+retry instead of
       // failing permanently.
       const message = err instanceof Error ? err.message : String(err)
+      // A fixed port already in use fails the boot; fall back to a random
+      // port once (the caller flips its launch to --port 0).
+      const stderrText = this.diagnostics
+      if (
+        !this.moduleRetryUsed &&
+        this.opts.onPortConflict !== undefined &&
+        /EADDRINUSE|address already in use|listen EADDRINUSE/.test(stderrText)
+      ) {
+        this.moduleRetryUsed = true
+        this.log('warn', 'port conflict detected; retrying with a random port')
+        try {
+          if (await this.opts.onPortConflict()) {
+            return this.spawnAndWait()
+          }
+        } catch {
+          // fallback failed; the failed state above stands
+        }
+      }
       if (!this.moduleRetryUsed && this.opts.onModuleMissing !== undefined && looksLikeMissingModule(message)) {
         this.moduleRetryUsed = true
         this.log('warn', 'startup failed with a missing-module error; reinstalling the runtime once')
@@ -452,10 +472,10 @@ export function nodeCommand(configuredPath: string | undefined): string {
 }
 
 /** Builds the repo-mode runtime launch for a source checkout. */
-export function repoLaunch(repoPath: string, nodePath?: string): RuntimeLaunch {
+export function repoLaunch(repoPath: string, nodePath?: string, port = 0): RuntimeLaunch {
   return {
     command: nodeCommand(nodePath),
-    args: ['--import', 'tsx/esm', join(repoPath, 'apps', 'cli', 'src', 'bin.ts'), 'web', '--port', '0'],
+    args: ['--import', 'tsx/esm', join(repoPath, 'apps', 'cli', 'src', 'bin.ts'), 'web', '--port', String(port)],
     cwd: repoPath,
   }
 }

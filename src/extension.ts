@@ -47,6 +47,7 @@ export function activate(context: vscode.ExtensionContext): void {
   // require restarting the extension.
   const readConfig = (): DshConfig => loadConfig(() => vscode.workspace.getConfiguration('dsh'))
 
+  let useRandomPort = false
   const resolveRuntime = (): {
     launch: RuntimeLaunch
     preflight: () => string[]
@@ -62,12 +63,12 @@ export function activate(context: vscode.ExtensionContext): void {
             ? 'No installed dsh found. Run `npm i -g @deepseek-ai/dsh` (or use `npx @deepseek-ai/dsh web` once), or set dsh.runtime.path.'
             : `No dsh at ${config.runtimePath} (expected ${dshBinIn(config.runtimePath)}).`
           return {
-            launch: installedLaunch(config.runtimePath ?? '', config.nodePath),
+            launch: installedLaunch(config.runtimePath ?? '', config.nodePath, portOf(useRandomPort, config)),
             preflight: () => [hint],
           }
         }
         return {
-          launch: installedLaunch(runtimePath, config.nodePath),
+          launch: installedLaunch(runtimePath, config.nodePath, portOf(useRandomPort, config)),
           preflight: () => {
             // npm sharp 0.35.3 is a broken release (binary fails to load);
             // detect and point at a fix without touching the user's install.
@@ -113,7 +114,7 @@ export function activate(context: vscode.ExtensionContext): void {
           })
         })
         return {
-          launch: installedLaunch(runtimeRoot, config.nodePath),
+          launch: installedLaunch(runtimeRoot, config.nodePath, portOf(useRandomPort, config)),
           ensureRuntime: async (force = false) => {
             // npm sharp 0.35.3 (broken release) must be pinned away before
             // (re)installing; overrides force the whole tree to SHARP_PIN.
@@ -160,7 +161,7 @@ export function activate(context: vscode.ExtensionContext): void {
         const repoPath = config.runtimePath ?? defaultRepoPath(extensionDir)
         if (repoPath === undefined) {
           return {
-            launch: repoLaunch(extensionDir, config.nodePath),
+            launch: repoLaunch(extensionDir, config.nodePath, portOf(useRandomPort, config)),
             preflight: () => [
               'Could not locate the deepseek-harness-master checkout. ' +
               'Set dsh.runtime.path to the repo directory, or switch dsh.runtime.mode ' +
@@ -169,7 +170,7 @@ export function activate(context: vscode.ExtensionContext): void {
           }
         }
         return {
-          launch: repoLaunch(repoPath, config.nodePath),
+          launch: repoLaunch(repoPath, config.nodePath, portOf(useRandomPort, config)),
           preflight: () => {
             const problems: string[] = []
             if (!repoInstalled(repoPath)) {
@@ -193,6 +194,11 @@ export function activate(context: vscode.ExtensionContext): void {
       await resolveRuntime().ensureRuntime?.(force)
     },
     onModuleMissing: async () => (await resolveRuntime().onModuleMissing?.()) ?? false,
+    onPortConflict: async () => {
+      useRandomPort = true
+      logChannel?.appendLine('[info] port 3080 in use; falling back to a random port')
+      return true
+    },
     log: (level, message) => logChannel?.appendLine(`[${level}] ${message}`),
     storagePath: context.globalStorageUri.fsPath,
   })
@@ -284,6 +290,13 @@ function showErrorWithReport(message: string): void {
   void vscode.window.showErrorMessage(message, '报告问题').then((choice) => {
     if (choice === '报告问题') void vscode.env.openExternal(vscode.Uri.parse(ISSUES_URL))
   })
+}
+
+/** Effective web port: fixed default 3080, 0 once a conflict forced a random port. */
+function portOf(useRandomPort: boolean, config: DshConfig): number {
+  if (useRandomPort) return 0
+  const configured = config.port
+  return configured !== undefined && configured > 0 ? configured : 3080
 }
 
 function messageOf(err: unknown): string {
