@@ -247,54 +247,18 @@ export function activate(context: vscode.ExtensionContext): void {
     }),
   )
 
-  // Status bar: `DSH: running :53087` / `starting…` / `stopped` (embedded),
-  // or a static badge in native mode (the SDK runtime has no port).
-  statusBar = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Right, 100)
-  context.subscriptions.push(statusBar)
-
-  // Status bar button: add the current VS Code workspace to dsh workspaces.
-  // Only meaningful in embedded mode (native mode already uses the folder as
-  // the agent cwd); the mode is fixed for the extension lifetime, so this is
-  // a one-time visibility decision.
-  const addWsButton = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Right, 99)
-  addWsButton.command = 'dsh.addWorkspace'
-  addWsButton.text = '$(root-folder) Add workspace'
-  addWsButton.tooltip = 'Add the current VS Code workspace to dsh workspaces'
-  if (native) addWsButton.hide()
-  else addWsButton.show()
-  context.subscriptions.push(addWsButton)
-  const updateStatusBar = (): void => {
-    if (native) {
-      statusBar!.text = '$(server-process) DSH: native'
-      statusBar!.tooltip = 'dsh.ui.mode = native (SDK runtime)'
-      statusBar!.show()
-      return
-    }
-    const state = server!.current
-    switch (state.kind) {
-      case 'running':
-        statusBar!.text = `$(server-process) DSH: ${state.port}`
-        statusBar!.tooltip = state.url
-        statusBar!.show()
-        break
-      case 'starting':
-        statusBar!.text = '$(sync~spin) DSH: starting…'
-        statusBar!.show()
-        break
-      case 'failed':
-        statusBar!.text = '$(error) DSH: failed'
-        statusBar!.tooltip = state.reason
-        statusBar!.show()
-        break
-      default:
-        statusBar!.text = '$(circle-slash) DSH: stopped'
-        statusBar!.show()
-    }
+  // Status bar: only used in native mode (the SDK runtime has no port, so
+  // the sidebar footer — embedded mode — cannot show one). In embedded mode
+  // the port and workspace button live in the view's footer instead.
+  if (native) {
+    statusBar = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Right, 100)
+    statusBar.text = '$(server-process) DSH: native'
+    statusBar.tooltip = 'dsh.ui.mode = native (SDK runtime)'
+    statusBar.show()
+    context.subscriptions.push(statusBar)
   }
-  updateStatusBar()
+
   if (!native) {
-    statusBar.command = 'dsh.openInBrowser'
-    context.subscriptions.push(server.onDidChangeState(updateStatusBar))
     // Auto-start once, so opening the sidebar just works.
     void server.start().catch((err) => {
       void vscode.window.showErrorMessage(`DSH failed to start: ${messageOf(err)}`)

@@ -65,7 +65,7 @@ interface PersistedState {
 const MAX_RESTARTS = 3
 const RESTART_BACKOFF_MS = [500, 1000, 2000, 4000] as const
 /** Installation considered "unusually long" after this many ms. */
-const INSTALL_TIMEOUT_MS = 180_000
+const INSTALL_TIMEOUT_MS = 60_000
 /** Lines of stderr kept for failure diagnostics. */
 const STDERR_TAIL = 40
 

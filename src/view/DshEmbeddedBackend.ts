@@ -64,7 +64,7 @@ export class DshEmbeddedBackend implements ChatBackend {
   <title>DSH</title>
   <style>
     html, body { margin: 0; padding: 0; height: 100%; overflow: hidden; }
-    #dsh-frame { width: 100%; height: 100%; border: none; display: block; }
+    #dsh-frame { position: absolute; top: 0; left: 0; right: 0; bottom: 28px; width: 100%; border: none; display: block; }
     #banner {
       position: fixed; top: 0; left: 0; right: 0; z-index: 10;
       padding: 8px 12px; font-size: 12px; box-sizing: border-box;
@@ -89,26 +89,35 @@ export class DshEmbeddedBackend implements ChatBackend {
       animation: spin 0.9s linear infinite;
     }
     @keyframes spin { to { transform: rotate(360deg); } }
-    #progress {
-      width: 60%; height: 6px; border-radius: 3px; overflow: hidden;
-      background: var(--vscode-widget-border, #888); display: none;
-    }
-    #progress.visible { display: block; }
-    #progress > div {
-      height: 100%; width: 0%;
-      background: var(--vscode-button-background);
-      transition: width 1s linear;
-    }
     #install-note {
       max-width: 90%; white-space: pre-wrap; word-break: break-all;
       font-size: 11px; opacity: 0.85; display: none;
     }
     #install-note.visible { display: block; }
+    #footer {
+      position: fixed; bottom: 0; left: 0; right: 0; z-index: 9; height: 28px;
+      display: flex; align-items: center; gap: 8px; padding: 0 10px;
+      font-size: 11px; box-sizing: border-box;
+      color: var(--vscode-foreground); background: var(--vscode-editor-background);
+      border-top: 1px solid var(--vscode-widget-border, #ccc);
+    }
+    #footer button {
+      border: none; cursor: pointer; padding: 2px 8px; border-radius: 3px;
+      color: var(--vscode-button-foreground); background: var(--vscode-button-background);
+    }
+    #footer .port-btn { background: none; color: inherit; padding: 2px 4px; }
+    #footer .port-btn:hover { background: var(--vscode-list-hoverBackground); }
+    #footer .spacer { flex: 1; }
   </style>
 </head>
 <body>
   <div id="banner"><span id="banner-text"></span><button id="banner-btn" hidden></button></div>
   <div id="overlay"><div class="spinner"></div><span id="overlay-text">Loading…</span><div id="progress"><div id="progress-fill"></div></div><span id="install-note"></span></div>
+  <div id="footer">
+    <button class="port-btn" id="port-btn" title="在浏览器中打开"></button>
+    <span class="spacer"></span>
+    <button id="add-ws-btn" title="将当前 VS Code 工作区加入 DeepSeek Harness 工作区">＋ 工作区</button>
+  </div>
   <iframe id="dsh-frame" title="DeepSeek Harness"></iframe>
   <script nonce="${nonce}">
     const vscode = acquireVsCodeApi()
@@ -118,14 +127,15 @@ export class DshEmbeddedBackend implements ChatBackend {
     const bannerBtn = document.getElementById('banner-btn')
     const overlay = document.getElementById('overlay')
     const overlayText = document.getElementById('overlay-text')
-    const progressBar = document.getElementById('progress')
-    const progressFill = document.getElementById('progress-fill')
     const installNote = document.getElementById('install-note')
+    const portBtn = document.getElementById('port-btn')
+    const addWsBtn = document.getElementById('add-ws-btn')
+    portBtn.addEventListener('click', () => vscode.postMessage({ command: 'openInBrowser' }))
+    addWsBtn.addEventListener('click', () => vscode.postMessage({ command: 'addWorkspace' }))
     let loadTimer = null
     let loaded = false
     let installTimer = null
     let installStartedAt = null
-    const INSTALL_EXPECTED_MS = 180000
     bannerBtn.addEventListener('click', () => vscode.postMessage({ command: 'startOrRetry' }))
     function showBanner(text, buttonLabel) {
       bannerText.textContent = text
@@ -158,14 +168,25 @@ export class DshEmbeddedBackend implements ChatBackend {
         }
       }, 45_000)
     }
+    function updateFooter(s) {
+      if (s.kind === 'running') {
+        portBtn.textContent = '● DeepSeek Harness: ' + s.port
+      } else if (s.kind === 'starting' || s.kind === 'installing') {
+        portBtn.textContent = '◌ DeepSeek Harness: 启动中…'
+      } else if (s.kind === 'failed') {
+        portBtn.textContent = '✕ DeepSeek Harness: 失败'
+      } else {
+        portBtn.textContent = '○ DeepSeek Harness: 未运行'
+      }
+    }
     window.addEventListener('message', (event) => {
       const msg = event.data
       if (!msg || msg.kind !== 'state') return
       const s = msg.state
+      updateFooter(s)
       if (s.kind === 'running') {
         clearInterval(installTimer)
         installStartedAt = null
-        progressBar.classList.remove('visible')
         installNote.classList.remove('visible')
         hideBanner()
         if (frame.getAttribute('src') !== s.url) {
@@ -188,20 +209,16 @@ export class DshEmbeddedBackend implements ChatBackend {
         // re-sends the installing state; without this the timer resets).
         if (installStartedAt === null) installStartedAt = Date.now()
         showOverlay('正在安装 DeepSeek Harness…（首次需要下载，请耐心等待）')
-        progressBar.classList.add('visible')
         installNote.classList.toggle('visible', !!s.note)
         installNote.textContent = s.note || ''
         clearInterval(installTimer)
         installTimer = setInterval(() => {
           const elapsed = Date.now() - installStartedAt
-          const pct = Math.min(100, Math.round(elapsed / INSTALL_EXPECTED_MS * 100))
-          progressFill.style.width = pct + '%'
           overlayText.textContent = '正在安装 DeepSeek Harness…（已等待 ' + Math.round(elapsed / 1000) + ' 秒）'
         }, 1000)
       } else if (s.kind === 'starting') {
         clearInterval(installTimer)
         installStartedAt = null
-        progressBar.classList.remove('visible')
         installNote.classList.remove('visible')
         frame.removeAttribute('src')
         showOverlay('正在启动 DeepSeek Harness 服务器…')
@@ -238,6 +255,10 @@ export class DshEmbeddedBackend implements ChatBackend {
       this.postTo(webview, { kind: 'state', state: this.server.current })
     } else if (msg.command === 'startOrRetry') {
       void this.server.start().catch(() => { /* state change already surfaced the failure */ })
+    } else if (msg.command === 'addWorkspace') {
+      void vscode.commands.executeCommand('dsh.addWorkspace')
+    } else if (msg.command === 'openInBrowser') {
+      void vscode.commands.executeCommand('dsh.openInBrowser')
     }
   }
 
