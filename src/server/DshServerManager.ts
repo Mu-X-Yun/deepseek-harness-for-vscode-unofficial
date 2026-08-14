@@ -430,7 +430,8 @@ export class DshServerManager implements vscode.Disposable {
         startedAt: this.installStartedAt,
         note:
           '安装耗时较长。可自行安装后点击重试：\n' +
-          `npm install --prefix "${cwd}" @deepseek-ai/dsh`,
+          `npm install --prefix "${cwd}" @deepseek-ai/dsh` +
+          '\n\n也可在设置中配置 dsh.runtime.registry 使用镜像源（如 https://registry.npmmirror.com）加速下载',
       })
     }, INSTALL_TIMEOUT_MS)
   }

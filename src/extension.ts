@@ -92,11 +92,6 @@ export function activate(context: vscode.ExtensionContext): void {
         // sharp 0.35.3 (no overrides there) and would fail to boot.
         const detectedRaw = findInstalledDsh(config.runtimePath)
         const detected = detectedRaw !== undefined && sharpVersion(detectedRaw) === SHARP_PIN ? detectedRaw : undefined
-        if (detectedRaw !== undefined && detected === undefined) {
-          logChannel?.appendLine(
-            `[info] detected dsh at ${detectedRaw} has sharp ${String(sharpVersion(detectedRaw))} (broken); installing a healthy copy instead`,
-          )
-        }
         // A fresh cache dir for self-heal reinstalls: the user's global npm
         // cache can hold corrupt entries (flaky-network downloads), which
         // reproduce missing files on every reinstall.
@@ -131,6 +126,11 @@ export function activate(context: vscode.ExtensionContext): void {
           launch: installedLaunch(detected ?? runtimeRoot, config.nodePath, portOf(useRandomPort, config)),
           ensureRuntime: async (force = false) => {
             if (detected !== undefined && !force) return
+            if (detectedRaw !== undefined) {
+              logChannel?.appendLine(
+                `[info] detected dsh at ${detectedRaw} has sharp ${String(sharpVersion(detectedRaw))} (broken); installing a healthy copy instead`,
+              )
+            }
             // npm sharp 0.35.3 (broken release) must be pinned away before
             // (re)installing; overrides force the whole tree to SHARP_PIN.
             ensureSharpPin(runtimeRoot)
@@ -139,9 +139,20 @@ export function activate(context: vscode.ExtensionContext): void {
             if (force) logChannel?.appendLine(`[info] force-reinstalling @deepseek-ai/dsh into ${runtimeRoot}…`)
             else logChannel?.appendLine(`[info] installing @deepseek-ai/dsh into ${runtimeRoot}…`)
             // First install uses the user's global npm cache (fast when
-            // packages are already downloaded); a corrupt-entry failure is
-            // healed by onModuleMissing with a fresh dedicated cache.
+            // packages are already downloaded). Verify essential files right
+            // after; a corrupt-entry install is immediately redone from a
+            // fresh dedicated cache, without waiting for a boot failure.
             await install()
+            const missing = missingRuntimeFiles(runtimeRoot)
+            if (missing.length > 0) {
+              logChannel?.appendLine(`[warn] install incomplete (${missing.join(', ')}); reinstalling from a fresh cache`)
+              rmSync(join(runtimeRoot, 'node_modules'), { recursive: true, force: true })
+              await install(['--cache', shellQuote(freshCache)])
+              const stillMissing = missingRuntimeFiles(runtimeRoot)
+              if (stillMissing.length > 0) {
+                logChannel?.appendLine(`[error] reinstall still incomplete: ${stillMissing.join(', ')}`)
+              }
+            }
           },
           preflight: () => {
             // Check the path actually used for launch (the detected npx/global

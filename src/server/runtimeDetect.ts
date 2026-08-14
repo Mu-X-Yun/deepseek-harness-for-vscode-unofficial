@@ -123,6 +123,7 @@ const RUNTIME_ESSENTIALS: ReadonlyArray<readonly [string, string]> = [
   ['commander', 'index.js'],
   ['@deepseek-ai/cordis', 'index.js'],
   ['typebox', 'build/type/action/module.mjs'],
+  ['js-yaml', 'dist/js-yaml.mjs'],
 ]
 
 /** Returns the essential files missing under a node_modules root (empty = healthy). */
