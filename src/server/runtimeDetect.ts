@@ -40,10 +40,15 @@ export function findInstalledDsh(configuredPath: string | undefined): string | u
   return npxCacheDsh()
 }
 
+/** The npm executable (npm.cmd on Windows — spawn/execFile need the shim). */
+export function npmCommand(): string {
+  return process.platform === 'win32' ? 'npm.cmd' : 'npm'
+}
+
 /** Runs `npm root -g` to locate the global node_modules root. */
 export function globalNpmRoot(): string | undefined {
   try {
-    const out = execFileSync('npm', ['root', '-g'], { encoding: 'utf8', windowsHide: true, timeout: 15_000 })
+    const out = execFileSync(npmCommand(), ['root', '-g'], { encoding: 'utf8', windowsHide: true, timeout: 15_000 })
     const root = out.trim()
     return root.length > 0 ? root : undefined
   } catch {

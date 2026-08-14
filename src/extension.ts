@@ -69,7 +69,7 @@ export function activate(context: vscode.ExtensionContext): void {
             if (hasDshBin(runtimeRoot)) return
             logChannel?.appendLine(`[info] installing @deepseek-ai/dsh into ${runtimeRoot}…`)
             await new Promise<void>((resolve, reject) => {
-              execFile('npm', ['install', '--prefix', runtimeRoot, '@deepseek-ai/dsh'], { windowsHide: true, timeout: 600_000 }, (err) => {
+              execFile(npmCommand(), ['install', '--prefix', runtimeRoot, '@deepseek-ai/dsh'], { windowsHide: true, timeout: 600_000 }, (err) => {
                 if (err) reject(new Error(`npm install @deepseek-ai/dsh failed: ${err.message}`))
                 else resolve()
               })
@@ -230,6 +230,15 @@ export function deactivate(): void {
 
 function messageOf(err: unknown): string {
   return err instanceof Error ? err.message : String(err)
+}
+
+/**
+ * The npm executable: Node's spawn/execFile do not resolve `.cmd` shims on
+ * Windows (npm ships as npm.cmd), so the plain `npm` name fails with ENOENT
+ * inside the Extension Host.
+ */
+function npmCommand(): string {
+  return process.platform === 'win32' ? 'npm.cmd' : 'npm'
 }
 
 /** Handler for `dsh.addWorkspace`: adopt the current VS Code workspace folder. */
