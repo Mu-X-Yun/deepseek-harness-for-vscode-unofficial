@@ -124,6 +124,7 @@ export class DshEmbeddedBackend implements ChatBackend {
     let loadTimer = null
     let loaded = false
     let installTimer = null
+    let installStartedAt = null
     const INSTALL_EXPECTED_MS = 180000
     bannerBtn.addEventListener('click', () => vscode.postMessage({ command: 'startOrRetry' }))
     function showBanner(text, buttonLabel) {
@@ -163,6 +164,7 @@ export class DshEmbeddedBackend implements ChatBackend {
       const s = msg.state
       if (s.kind === 'running') {
         clearInterval(installTimer)
+        installStartedAt = null
         progressBar.classList.remove('visible')
         installNote.classList.remove('visible')
         hideBanner()
@@ -182,21 +184,23 @@ export class DshEmbeddedBackend implements ChatBackend {
         }
       } else if (s.kind === 'installing') {
         frame.removeAttribute('src')
-        const startedAt = Date.now()
+        // Persist the start time across poll re-pushes (every 15s the host
+        // re-sends the installing state; without this the timer resets).
+        if (installStartedAt === null) installStartedAt = Date.now()
         showOverlay('正在安装 DeepSeek Harness…（首次需要下载，请耐心等待）')
         progressBar.classList.add('visible')
-        progressFill.style.width = '0%'
         installNote.classList.toggle('visible', !!s.note)
         installNote.textContent = s.note || ''
         clearInterval(installTimer)
         installTimer = setInterval(() => {
-          const elapsed = Date.now() - startedAt
+          const elapsed = Date.now() - installStartedAt
           const pct = Math.min(100, Math.round(elapsed / INSTALL_EXPECTED_MS * 100))
           progressFill.style.width = pct + '%'
           overlayText.textContent = '正在安装 DeepSeek Harness…（已等待 ' + Math.round(elapsed / 1000) + ' 秒）'
         }, 1000)
       } else if (s.kind === 'starting') {
         clearInterval(installTimer)
+        installStartedAt = null
         progressBar.classList.remove('visible')
         installNote.classList.remove('visible')
         frame.removeAttribute('src')

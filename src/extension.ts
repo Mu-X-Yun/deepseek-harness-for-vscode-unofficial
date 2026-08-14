@@ -122,7 +122,10 @@ export function activate(context: vscode.ExtensionContext): void {
             if (!force && hasDshBin(runtimeRoot) && version === SHARP_PIN) return
             if (force) logChannel?.appendLine(`[info] force-reinstalling @deepseek-ai/dsh into ${runtimeRoot}…`)
             else logChannel?.appendLine(`[info] installing @deepseek-ai/dsh into ${runtimeRoot}…`)
-            await install()
+            // Always use the extension's own cache: the user's global npm
+            // cache has repeatedly served corrupt entries (missing files in
+            // commander/cordis/typebox), so never trust it for the runtime.
+            await install(['--cache', shellQuote(freshCache)])
           },
           preflight: () => {
             if (!hasDshBin(runtimeRoot)) return ['dsh runtime is not installed yet (auto-install pending).']

@@ -414,7 +414,9 @@ export class DshServerManager implements vscode.Disposable {
 
 /** Matches module-resolution failures (missing/corrupt installs). */
 function looksLikeMissingModule(message: string): boolean {
-  return /Cannot find module|ERR_MODULE_NOT_FOUND|MODULE_NOT_FOUND/.test(message)
+  // Node 24 reports both "Cannot find module" and "Cannot find package";
+  // ESM import failures surface either, depending on the resolve stage.
+  return /Cannot find (module|package)|ERR_MODULE_NOT_FOUND|MODULE_NOT_FOUND/.test(message)
 }
 
 /** True when the repo checkout exists and has a Node module graph installed. */
