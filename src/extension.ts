@@ -13,11 +13,14 @@ import { buildEnv, defaultRepoPath, loadConfig, type DshConfig } from './config.
 import {
   DshServerManager,
   dshBinIn,
+  ensureSharpPin,
   findInstalledDsh,
   hasDshBin,
   installedLaunch,
   repoInstalled,
   repoLaunch,
+  SHARP_PIN,
+  sharpVersion,
   webDistBuilt,
   type RuntimeLaunch,
 } from './server/DshServerManager.ts'
@@ -52,21 +55,36 @@ export function activate(context: vscode.ExtensionContext): void {
             ? 'No installed dsh found. Run `npm i -g @deepseek-ai/dsh` (or use `npx @deepseek-ai/dsh web` once), or set dsh.runtime.path.'
             : `No dsh at ${config.runtimePath} (expected ${dshBinIn(config.runtimePath)}).`
           return {
-            launch: installedLaunch(config.runtimePath ?? '', config.nodePath, join(extensionDir, 'disable-attachment.cordis.yml')),
+            launch: installedLaunch(config.runtimePath ?? '', config.nodePath),
             preflight: () => [hint],
           }
         }
         return {
-          launch: installedLaunch(runtimePath, config.nodePath, join(extensionDir, 'disable-attachment.cordis.yml')),
-          preflight: () => [],
+          launch: installedLaunch(runtimePath, config.nodePath),
+          preflight: () => {
+            // npm sharp 0.35.3 is a broken release (binary fails to load);
+            // detect and point at a fix without touching the user's install.
+            const version = sharpVersion(runtimePath)
+            if (version !== undefined && version !== SHARP_PIN) {
+              return [
+                `The installed dsh uses sharp ${version}, a broken npm release. ` +
+                `Run \`npm i -g sharp@${SHARP_PIN}\` (or switch dsh.runtime.mode to "auto-install").`,
+              ]
+            }
+            return []
+          },
         }
       }
       case 'auto-install': {
         const runtimeRoot = join(context.globalStorageUri.fsPath, 'runtime')
         return {
-          launch: installedLaunch(runtimeRoot, config.nodePath, join(extensionDir, 'disable-attachment.cordis.yml')),
+          launch: installedLaunch(runtimeRoot, config.nodePath),
           ensureRuntime: async () => {
-            if (hasDshBin(runtimeRoot)) return
+            // npm sharp 0.35.3 (broken release) must be pinned away before
+            // (re)installing; overrides force the whole tree to SHARP_PIN.
+            ensureSharpPin(runtimeRoot)
+            const version = sharpVersion(runtimeRoot)
+            if (hasDshBin(runtimeRoot) && version === SHARP_PIN) return
             logChannel?.appendLine(`[info] installing @deepseek-ai/dsh into ${runtimeRoot}…`)
             await new Promise<void>((resolve, reject) => {
               // shell: true is required on Windows: .cmd shims (npm.cmd) cannot
@@ -79,7 +97,13 @@ export function activate(context: vscode.ExtensionContext): void {
               })
             })
           },
-          preflight: () => hasDshBin(runtimeRoot) ? [] : ['dsh runtime is not installed yet (auto-install pending).'],
+          preflight: () => {
+            if (!hasDshBin(runtimeRoot)) return ['dsh runtime is not installed yet (auto-install pending).']
+            const version = sharpVersion(runtimeRoot)
+            return version !== undefined && version !== SHARP_PIN
+              ? [`sharp ${version} (broken release) still present after install; retry may be needed.`]
+              : []
+          },
         }
       }
       case 'repo':

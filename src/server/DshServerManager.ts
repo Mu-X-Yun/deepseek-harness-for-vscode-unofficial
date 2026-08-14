@@ -17,7 +17,7 @@ import { join } from 'node:path'
 import * as vscode from 'vscode'
 import { findReadyUrl, type ReadyLine } from './portParser.ts'
 import type { DshConfig } from '../config.ts'
-export { dshBinIn, findInstalledDsh, globalNpmRoot, hasDshBin, installedLaunch, npxCacheDsh } from './runtimeDetect.ts'
+export { dshBinIn, ensureSharpPin, findInstalledDsh, globalNpmRoot, hasDshBin, installedLaunch, npxCacheDsh, SHARP_PIN, sharpVersion } from './runtimeDetect.ts'
 export type { RuntimeLaunch } from './runtimeDetect.ts'
 import type { RuntimeLaunch } from './runtimeDetect.ts'
 

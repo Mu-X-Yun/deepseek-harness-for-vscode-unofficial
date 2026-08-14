@@ -80,11 +80,11 @@ describe('findInstalledDsh', () => {
 
 describe('installedLaunch', () => {
   it('produces a valid node invocation (bin first, launcher flags after)', () => {
-    const launch = installedLaunch('C:/rt', undefined, 'C:/overlay.yml')
+    const launch = installedLaunch('C:/rt', undefined)
     expect(launch.command).toBe('node')
     expect(launch.args[0]).toBe(join('C:/rt', 'node_modules', '@deepseek-ai', 'dsh', 'lib', 'bin.js'))
     expect(launch.args).toContain('--profile')
-    expect(launch.args).toContain('--patch')
-    expect(launch.args).toContain('C:/overlay.yml')
+    expect(launch.args).toContain('web')
+    expect(launch.args).not.toContain('--patch')
   })
 })

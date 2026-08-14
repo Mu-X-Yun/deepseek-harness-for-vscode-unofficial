@@ -1,7 +1,0 @@
-# Overlay applied by installed/auto-install modes: disables the
-# attachment-local plugin, whose sharp image dependency is broken on npm
-# releases ≥ 0.35 (sharp.mjs requires the legacy `sharp.node` path while
-# the platform package ships the binary under lib/). Chat, tools, and
-# sessions are unaffected; image attachments are unavailable.
-- id: attachment-local
-  disabled: true

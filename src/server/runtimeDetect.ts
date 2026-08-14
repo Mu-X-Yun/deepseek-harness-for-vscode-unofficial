@@ -7,7 +7,7 @@
  */
 
 import { execFileSync } from 'node:child_process'
-import { accessSync, readdirSync, statSync } from 'node:fs'
+import { accessSync, readFileSync, readdirSync, statSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 
 /** The npm-installed dsh bin path inside a node_modules root. */
@@ -99,18 +99,50 @@ export function nodeCommand(configuredPath: string | undefined): string {
 
 /**
  * Builds the installed-mode runtime launch for an npm-installed dsh.
- * Uses `--profile web` (not the `web` alias) so launcher flags like
- * `--patch` are accepted, and applies the attachment-disabling overlay:
- * npm sharp ≥ 0.35 is broken (sharp.mjs requires the legacy `sharp.node`
- * path), so attachment-local must be disabled to boot at all.
+ * Uses `--profile web` (not the `web` alias) so launcher flags are
+ * accepted by the release package.
  */
-export function installedLaunch(runtimePath: string, nodePath: string | undefined, overlayPath: string): RuntimeLaunch {
+export function installedLaunch(runtimePath: string, nodePath: string | undefined): RuntimeLaunch {
   const bin = dshBinIn(runtimePath)
   return {
     command: nodeCommand(nodePath),
-    args: [bin, '--profile', 'web', '--patch', overlayPath, '--port', '0'],
+    args: [bin, '--profile', 'web', '--port', '0'],
     cwd: runtimePath,
   }
+}
+
+/** The sharp version pinned by the extension (0.35.3 is a broken release). */
+export const SHARP_PIN = '0.35.2'
+
+/** Reads the installed sharp version under a node_modules root, or undefined. */
+export function sharpVersion(runtimePath: string): string | undefined {
+  try {
+    const pkg = JSON.parse(readFileSync(join(runtimePath, 'node_modules', 'sharp', 'package.json'), 'utf8')) as { version?: string }
+    return typeof pkg.version === 'string' ? pkg.version : undefined
+  } catch {
+    return undefined
+  }
+}
+
+/**
+ * Ensures `<runtimeRoot>/package.json` pins sharp to {@link SHARP_PIN} via
+ * npm overrides, so a reinstall replaces the broken 0.35.3 release across
+ * the whole dependency tree.
+ * @returns the path of the (possibly created) package.json.
+ */
+export function ensureSharpPin(runtimeRoot: string): string {
+  const pkgPath = join(runtimeRoot, 'package.json')
+  let pkg: Record<string, unknown>
+  try {
+    pkg = JSON.parse(readFileSync(pkgPath, 'utf8')) as Record<string, unknown>
+  } catch {
+    pkg = {}
+  }
+  const overrides = (pkg.overrides ?? {}) as Record<string, unknown>
+  overrides.sharp = SHARP_PIN
+  pkg.overrides = overrides
+  writeFileSync(pkgPath, JSON.stringify(pkg, null, 2), 'utf8')
+  return pkgPath
 }
 
 export interface RuntimeLaunch {
