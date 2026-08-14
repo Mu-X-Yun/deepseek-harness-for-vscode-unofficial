@@ -6,10 +6,7 @@
 
 An unofficial client that brings [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) (`dsh`, DeepSeek's open-source AI coding agent framework) into the VS Code sidebar.
 
-Two sidebar UIs (switch with `dsh.ui.mode`):
-
-- **embedded (default)**: embeds dsh's official Web UI in a sidebar iframe — full feature set
-- **native**: a custom chat UI built on the official JSON-RPC SDK — native VS Code feel
+Embeds **dsh's official Web UI** in a sidebar iframe (full feature set).
 
 ## Quick Start
 
@@ -53,7 +50,6 @@ This extension is a **third-party VS Code client** for the official [DeepSeek Ha
 - **No official source code included or modified**: the extension contains no dsh code and applies no patches; dsh's source, copyright, and release belong to DeepSeek AI.
 - **How it drives dsh**: the extension starts the dsh installed on your machine (auto-installed, globally installed, or a source checkout) and drives it through public interfaces:
   - **embedded mode**: spawns `dsh web` and embeds the official Web UI in a sidebar iframe (the UI itself is dsh's official UI)
-  - **native mode**: drives the dsh runtime via the official JSON-RPC SDK (`@deepseek-ai/dsh-sdk-client`)
 - **You provide**: a DeepSeek API Key (the dsh runtime can be auto-installed by the extension).
 - **Upstream dependency**: dsh is in developer preview (0.1.0-rc.x); upstream updates may change behavior and affect this extension — out of this project's control.
 
@@ -72,7 +68,6 @@ Default `auto-install` works for most users; switch to `installed` to reuse an e
 npm i -g @deepseek-ai/dsh   # then set dsh.runtime.mode: installed
 ```
 
-> ℹ️ **Mode applicability**: `installed` / `auto-install` support **embedded mode** (the npm package runs `dsh web` fully; verified). **native mode** currently requires `repo` — the upstream npm package (`dsh-sdk-jsonrpc-demo`) does not bundle the cordis.yml plugin dependencies (llm-deepseek, agent-spine, etc.), so it cannot run standalone in npm form.
 
 ## Settings
 
@@ -87,7 +82,7 @@ npm i -g @deepseek-ai/dsh   # then set dsh.runtime.mode: installed
 | `dsh.runtime.port` | `3080` | dsh web port; `0` = random (auto-fallback when 3080 is taken) |
 | `dsh.permissionMode` | `workspace-write` | Injected as `DSH_PERMISSION_MODE` |
 | `dsh.model` | `deepseek-v4-flash` | Default model for new sessions |
-| `dsh.ui.mode` | `embedded` | Sidebar UI: `embedded` (iframe) / `native` (custom chat UI) |
+| `dsh.ui.mode` | `embedded` | Sidebar UI (only `embedded` is currently available) |
 
 ## Prerequisites
 
@@ -100,20 +95,16 @@ npm i -g @deepseek-ai/dsh   # then set dsh.runtime.mode: installed
 - dsh is in developer preview (0.1.0-rc.x); compatibility may change; the extension pins its version.
 - The embedded UI is dsh's own Web UI — its theme does not fully match VS Code (native mode addresses this).
 - The embedded iframe captures keyboard focus; some VS Code shortcuts are unavailable inside the chat area.
-- In native mode, `stopAgent` terminates and rebuilds the runtime (the protocol has no mid-turn cancel; in-flight progress is lost); session history after an extension restart is read-only (no session resume in the protocol).
-- Native mode has no interactive permission prompts (no permission-request method in the JSON-RPC protocol); under `dsh.permissionMode: workspace-write` dangerous commands are effectively denied — switch to `danger-full-access` to allow them.
 - The dsh process stays running after VS Code closes (so next start is instant); use `DSH: Stop server` to stop it manually.
 
 ## Architecture Highlights
 
-- **Process ownership**: `dsh web` (embedded) and `dsh-jsonrpc-agent` (native) children are owned by the Extension Host and survive sidebar view disposal; **reused across Reloads** (state persisted to extension storage, health-checked for instant reuse); on Windows, teardown uses `taskkill /T /F` on the process tree.
+- **Process ownership**: the `dsh web` child is owned by the Extension Host and survives sidebar view disposal; **reused across Reloads** (state persisted to extension storage, health-checked for instant reuse); on Windows, teardown uses `taskkill /T /F` on the process tree.
 - **Readiness detection**: embedded mode parses dsh stdout for the `dsh web: http://127.0.0.1:<port>` ready line (`--port 0` = random port) instead of port polling.
 - **State sync**: host broadcast + webview ready handshake + 15s poll fallback — any lost state push self-heals.
 - **Embed security**: the iframe and the dsh service are same-origin (127.0.0.1), passing dsh's browser-trust fence; the server sets no CSP / X-Frame-Options, so embedding is not blocked.
 - **Key injection**: `DEEPSEEK_API_KEY` / `DEEPSEEK_BASE_URL` / `DSH_*` are injected only via the spawn environment — matching dsh's BOOTSTRAP constraints (forbidden from `.env`).
 - **Dependency fix**: npm sharp 0.35.3 is a broken release (binary fails to load); the extension pins 0.35.2 via npm overrides (auto-install handles it; installed mode detects and advises).
-- **Native runtime**: `dsh-jsonrpc-agent` launches from the repo via tsx (`node --import tsx/esm`); the generated cordis.yml lives in extension global storage, resolving plugins through a Windows junction to `examples/node_modules` (same mechanism as dsh's `healProfilesModuleFallback`).
-- **Native event stream**: `DeepSeekHarness` owns the subprocess; `HarnessClient.subscribe()` streams `session.event` / `session.status` / `subagent.*` notifications; the renderer follows the wire structure (envelope `data` field) with streaming folding, seq dedup, and compaction replay.
 
 ## Development (repo mode)
 

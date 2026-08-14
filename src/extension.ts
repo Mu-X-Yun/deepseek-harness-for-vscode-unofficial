@@ -264,13 +264,9 @@ export function activate(context: vscode.ExtensionContext): void {
     storagePath: context.globalStorageUri.fsPath,
   })
 
-  // Sidebar view: pick the backend by ui mode.
-  const uiMode = readConfig().uiMode
-  const native = uiMode === 'native'
-  const backend: import('./view/DshChatBackend.ts').ChatBackend =
-    native
-      ? makeNativeBackend(context, extensionDir, server)
-      : new DshEmbeddedBackend(server)
+  // Sidebar view: embedded only (the native chat UI is temporarily
+  // disabled — feature-incomplete; its sources and tests are kept).
+  const backend: import('./view/DshChatBackend.ts').ChatBackend = new DshEmbeddedBackend(server)
   context.subscriptions.push(
     vscode.window.registerWebviewViewProvider(
       DshChatViewProvider.viewType,
@@ -314,23 +310,10 @@ export function activate(context: vscode.ExtensionContext): void {
     }),
   )
 
-  // Status bar: only used in native mode (the SDK runtime has no port, so
-  // the sidebar footer — embedded mode — cannot show one). In embedded mode
-  // the port and workspace button live in the view's footer instead.
-  if (native) {
-    statusBar = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Right, 100)
-    statusBar.text = '$(server-process) DSH: native'
-    statusBar.tooltip = 'dsh.ui.mode = native (SDK runtime)'
-    statusBar.show()
-    context.subscriptions.push(statusBar)
-  }
-
-  if (!native) {
-    // Auto-start once, so opening the sidebar just works.
-    void server.start().catch((err) => {
-      showErrorWithReport(`DSH failed to start: ${messageOf(err)}`)
-    })
-  }
+  // Auto-start once, so opening the sidebar just works.
+  void server.start().catch((err) => {
+    showErrorWithReport(`DSH failed to start: ${messageOf(err)}`)
+  })
 }
 
 /**
@@ -388,14 +371,6 @@ async function addWorkspaceCommand(config: DshConfig): Promise<void> {
     void vscode.window.showWarningMessage('DSH: open a workspace folder first.')
     return
   }
-  if (config.uiMode === 'native') {
-    // Native mode already runs the agent with the workspace folder as cwd;
-    // the durable web-side workspace registry does not apply.
-    void vscode.window.showInformationMessage(
-      `DSH: native mode already uses "${folder.name}" as the agent working directory.`,
-    )
-    return
-  }
   const state = server?.current
   if (state?.kind !== 'running') {
     void vscode.window.showWarningMessage('DSH: server is not running. Start it first (DSH: Start server).')
@@ -413,29 +388,3 @@ async function addWorkspaceCommand(config: DshConfig): Promise<void> {
   }
 }
 
-function configRepoPath(extensionDir: string): string {
-  const cfg = loadConfig(() => vscode.workspace.getConfiguration('dsh'))
-  return cfg.runtimePath ?? defaultRepoPath(extensionDir) ?? extensionDir
-}
-
-/** Builds the phase 2 (native) backend and its session plane. */
-function makeNativeBackend(
-  context: vscode.ExtensionContext,
-  extensionDir: string,
-  _server: DshServerManager | undefined,
-): import('./view/DshChatBackend.ts').ChatBackend {
-  const config = loadConfig(() => vscode.workspace.getConfiguration('dsh'))
-  let nativeBackend: DshNativeBackend
-  sessions = new SessionManager({
-    storagePath: context.globalStorageUri.fsPath,
-    repoPath: configRepoPath(extensionDir),
-    workspaceFolder: vscode.workspace.workspaceFolders?.[0]?.uri.fsPath ?? process.cwd(),
-    env: buildEnv(process.env, config),
-    model: config.model,
-    nodePath: config.nodePath,
-    onNotification: (n, sessionId) => nativeBackend.handleNotification(n.method, sessionId, n.params),
-    onFailure: (error) => nativeBackend.handleFailure(error),
-  })
-  nativeBackend = new DshNativeBackend(context, sessions)
-  return nativeBackend
-}

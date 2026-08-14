@@ -6,10 +6,7 @@
 
 在 VS Code 侧边栏中使用 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness)（`dsh`，DeepSeek 官方的 AI 编程代理框架）的非官方客户端。
 
-两种侧边栏界面（`dsh.ui.mode` 切换）：
-
-- **embedded（默认）**：侧边栏 iframe 嵌入 dsh 官方 Web UI，功能最全
-- **native**：基于官方 JSON-RPC SDK 的自建聊天 UI，原生 VS Code 交互体验
+侧边栏嵌入 **dsh 官方 Web UI**（iframe 模式，功能最全）。
 
 ## 快速开始
 
@@ -53,7 +50,6 @@
 - **不包含、不修改官方源码**：插件本身不含任何 dsh 代码，也不对其做补丁或修改；dsh 的源码、版权与发布权归 DeepSeek AI 所有。
 - **驱动方式**：插件启动你本机安装的 dsh（自动安装、全局安装或源码检出），通过其公开接口驱动：
   - **embedded 模式**：spawn `dsh web`，在侧边栏 iframe 中嵌入官方 Web UI（界面本身即 dsh 官方 UI）
-  - **native 模式**：通过官方 JSON-RPC SDK（`@deepseek-ai/dsh-sdk-client`）协议驱动 dsh 运行时
 - **需要自备**：DeepSeek API Key（dsh 运行时可由插件自动安装）。
 - **上游依赖**：dsh 仍处开发者预览阶段（0.1.0-rc.x），其更新可能改变行为、影响本插件 —— 上游变更不受本插件控制。
 
@@ -72,7 +68,6 @@
 npm i -g @deepseek-ai/dsh   # 然后设 dsh.runtime.mode: installed
 ```
 
-> ℹ️ **模式适用性**：`installed` / `auto-install` 支持 **embedded 模式**（npm 包可完整运行 `dsh web`，已实测）。**native 模式**当前仅支持 `repo` —— 上游 npm 包（`dsh-sdk-jsonrpc-demo`）未包含 cordis.yml 所需的插件依赖（llm-deepseek、agent-spine 等），npm 形态下无法独立运行。
 
 ## 配置项
 
@@ -87,7 +82,7 @@ npm i -g @deepseek-ai/dsh   # 然后设 dsh.runtime.mode: installed
 | `dsh.runtime.port` | `3080` | dsh web 端口；`0` = 随机（3080 被占用时自动回退） |
 | `dsh.permissionMode` | `workspace-write` | 注入为 `DSH_PERMISSION_MODE` |
 | `dsh.model` | `deepseek-v4-flash` | 新会话默认模型 |
-| `dsh.ui.mode` | `embedded` | 侧边栏界面：`embedded`（iframe 嵌入）/ `native`（自建聊天 UI） |
+| `dsh.ui.mode` | `embedded` | 侧边栏界面（当前仅支持 `embedded`） |
 
 ## 前置要求
 
@@ -100,20 +95,16 @@ npm i -g @deepseek-ai/dsh   # 然后设 dsh.runtime.mode: installed
 - dsh 处于 developer preview（0.1.0-rc.x），兼容性可能变更；扩展锁定版本。
 - embedded 界面是 dsh 自带 Web UI，主题与 VS Code 不完全统一（native 模式解决）。
 - embedded 的 iframe 会捕获键盘焦点，部分 VS Code 快捷键在聊天区域不可用。
-- native 模式的 `stopAgent` 会终止并重建运行时（协议无 mid-turn cancel，进行中的回合进度丢失）；跨扩展重启的会话历史为只读浏览（协议无 session resume）。
-- native 模式无交互式权限弹窗（JSON-RPC 协议无权限请求方法）；`dsh.permissionMode: workspace-write` 下危险命令实际被拒绝，需切换 `danger-full-access` 才能放行。
 - 关闭 VSCode 时 dsh 进程会保留运行（便于下次秒开）；需手动停止时用 `DSH: Stop server` 命令。
 
 ## 架构要点
 
-- **进程归属**：`dsh web`（embedded）与 `dsh-jsonrpc-agent`（native）子进程由扩展宿主（Extension Host）持有，不随侧边栏视图销毁；**Reload 时保留复用**（状态持久化到扩展存储，健康检查通过则秒开），Windows 上停止时 `taskkill /T /F` 清理进程树。
+- **进程归属**：`dsh web` 子进程由扩展宿主（Extension Host）持有，不随侧边栏视图销毁；**Reload 时保留复用**（状态持久化到扩展存储，健康检查通过则秒开），Windows 上停止时 `taskkill /T /F` 清理进程树。
 - **就绪检测**：embedded 模式解析 dsh stdout 的 `dsh web: http://127.0.0.1:<port>` 就绪行（`--port 0` 随机端口），而非轮询端口。
 - **状态同步**：宿主广播 + webview ready 握手 + 15 秒轮询兜底 —— 任何丢失的状态推送都会自愈。
 - **嵌入安全**：iframe 与 dsh 服务同源（127.0.0.1），通过 dsh 的浏览器信任栅栏；服务器无 CSP / X-Frame-Options，不阻止嵌入。
 - **密钥注入**：`DEEPSEEK_API_KEY` / `DEEPSEEK_BASE_URL` / `DSH_*` 只通过 spawn 环境注入 —— 这与 dsh 的 BOOTSTRAP 约束（禁止从 `.env` 读取）一致。
 - **依赖修复**：npm sharp 0.35.3 为坏发布（二进制无法加载），扩展通过 npm overrides 钉定 0.35.2（auto-install 自动处理；installed 模式检测并提示）。
-- **native 运行时**：`dsh-jsonrpc-agent` 以 tsx 源码形态从 repo 启动（`node --import tsx/esm`）；生成的 cordis.yml 位于扩展 globalStorage，通过 Windows junction 链接到 `examples/node_modules` 解析插件（与 dsh 的 `healProfilesModuleFallback` 同机制）。
-- **native 事件流**：`DeepSeekHarness` 持子进程，`HarnessClient.subscribe()` 流式接收 `session.event` / `session.status` / `subagent.*` 通知；渲染层按 wire 结构（envelope `data` 字段）处理，支持流式折叠、seq 去重与压缩回放。
 
 ## 开发环境（repo 模式）
 

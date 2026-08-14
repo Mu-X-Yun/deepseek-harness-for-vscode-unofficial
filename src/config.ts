@@ -13,7 +13,7 @@ import { dirname } from 'node:path'
 import type * as vscode from 'vscode'
 
 export type RuntimeMode = 'repo' | 'installed' | 'auto-install'
-export type UiMode = 'embedded' | 'native'
+export type UiMode = 'embedded' // native 模式暂禁用（功能不完整）
 
 export interface DshConfig {
   /** DEEPSEEK_API_KEY from settings, undefined when unset. */

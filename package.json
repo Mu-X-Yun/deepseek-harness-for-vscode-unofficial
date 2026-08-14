@@ -136,11 +136,10 @@
         "dsh.ui.mode": {
           "type": "string",
           "enum": [
-            "embedded",
-            "native"
+            "embedded"
           ],
           "default": "embedded",
-          "markdownDescription": "Sidebar UI: `embedded` (phase 1) iframes dsh's own Web UI; `native` (phase 2) renders the extension's own chat UI over the JSON-RPC SDK."
+          "markdownDescription": "Sidebar UI. `embedded` iframes dsh's own Web UI (the native chat UI is temporarily disabled)."
         }
       }
     }
