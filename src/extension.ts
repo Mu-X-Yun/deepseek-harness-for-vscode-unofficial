@@ -87,8 +87,16 @@ export function activate(context: vscode.ExtensionContext): void {
         const runtimeRoot = join(context.globalStorageUri.fsPath, 'runtime')
         // If the user already has a usable dsh (global install or npx
         // cache from `npx @deepseek-ai/dsh web`), reuse it instead of
-        // downloading a fresh copy.
-        const detected = findInstalledDsh(config.runtimePath)
+        // downloading a fresh copy. Only adopt it when its sharp is the
+        // pinned healthy version — an npx-cached install carries the broken
+        // sharp 0.35.3 (no overrides there) and would fail to boot.
+        const detectedRaw = findInstalledDsh(config.runtimePath)
+        const detected = detectedRaw !== undefined && sharpVersion(detectedRaw) === SHARP_PIN ? detectedRaw : undefined
+        if (detectedRaw !== undefined && detected === undefined) {
+          logChannel?.appendLine(
+            `[info] detected dsh at ${detectedRaw} has sharp ${String(sharpVersion(detectedRaw))} (broken); installing a healthy copy instead`,
+          )
+        }
         // A fresh cache dir for self-heal reinstalls: the user's global npm
         // cache can hold corrupt entries (flaky-network downloads), which
         // reproduce missing files on every reinstall.
