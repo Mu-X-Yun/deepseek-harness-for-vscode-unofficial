@@ -315,12 +315,18 @@ export function repoLaunch(repoPath: string, nodePath?: string): RuntimeLaunch {
   }
 }
 
-/** Builds the installed-mode runtime launch for an npm-installed dsh. */
-export function installedLaunch(runtimePath: string, nodePath?: string): RuntimeLaunch {
+/**
+ * Builds the installed-mode runtime launch for an npm-installed dsh.
+ * Uses `--profile web` (not the `web` alias) so launcher flags like
+ * `--patch` are accepted, and applies the attachment-disabling overlay:
+ * npm sharp ≥ 0.35 is broken (sharp.mjs requires the legacy `sharp.node`
+ * path), so attachment-local must be disabled to boot at all.
+ */
+export function installedLaunch(runtimePath: string, nodePath: string | undefined, overlayPath: string): RuntimeLaunch {
   const bin = join(runtimePath, 'node_modules', '@deepseek-ai', 'dsh', 'lib', 'bin.js')
   return {
     command: nodeCommand(nodePath),
-    args: [bin, 'web', '--port', '0'],
+    args: ['--profile', 'web', '--patch', overlayPath, '--port', '0'],
     cwd: runtimePath,
   }
 }

@@ -52,19 +52,19 @@ export function activate(context: vscode.ExtensionContext): void {
             ? 'No installed dsh found. Run `npm i -g @deepseek-ai/dsh` (or use `npx @deepseek-ai/dsh web` once), or set dsh.runtime.path.'
             : `No dsh at ${config.runtimePath} (expected ${dshBinIn(config.runtimePath)}).`
           return {
-            launch: installedLaunch(config.runtimePath ?? '', config.nodePath),
+            launch: installedLaunch(config.runtimePath ?? '', config.nodePath, join(extensionDir, 'disable-attachment.cordis.yml')),
             preflight: () => [hint],
           }
         }
         return {
-          launch: installedLaunch(runtimePath, config.nodePath),
+          launch: installedLaunch(runtimePath, config.nodePath, join(extensionDir, 'disable-attachment.cordis.yml')),
           preflight: () => [],
         }
       }
       case 'auto-install': {
         const runtimeRoot = join(context.globalStorageUri.fsPath, 'runtime')
         return {
-          launch: installedLaunch(runtimeRoot, config.nodePath),
+          launch: installedLaunch(runtimeRoot, config.nodePath, join(extensionDir, 'disable-attachment.cordis.yml')),
           ensureRuntime: async () => {
             if (hasDshBin(runtimeRoot)) return
             logChannel?.appendLine(`[info] installing @deepseek-ai/dsh into ${runtimeRoot}…`)
