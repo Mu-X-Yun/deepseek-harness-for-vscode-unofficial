@@ -76,10 +76,24 @@ export class DshEmbeddedBackend implements ChatBackend {
       border: none; cursor: pointer; padding: 2px 8px; border-radius: 2px;
       color: var(--vscode-button-foreground); background: var(--vscode-button-background);
     }
+    #overlay {
+      position: fixed; inset: 0; z-index: 5; display: none;
+      flex-direction: column; align-items: center; justify-content: center; gap: 10px;
+      color: var(--vscode-foreground); background: var(--vscode-editor-background);
+      font-size: 12px; text-align: center; padding: 20px;
+    }
+    #overlay.visible { display: flex; }
+    #overlay .spinner {
+      width: 20px; height: 20px; border-radius: 50%;
+      border: 2px solid var(--vscode-widget-border, #888); border-top-color: var(--vscode-button-background);
+      animation: spin 0.9s linear infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
   </style>
 </head>
 <body>
   <div id="banner"><span id="banner-text"></span><button id="banner-btn" hidden></button></div>
+  <div id="overlay"><div class="spinner"></div><span id="overlay-text">Loading…</span></div>
   <iframe id="dsh-frame" title="DeepSeek Harness"></iframe>
   <script nonce="${nonce}">
     const vscode = acquireVsCodeApi()
@@ -87,6 +101,10 @@ export class DshEmbeddedBackend implements ChatBackend {
     const banner = document.getElementById('banner')
     const bannerText = document.getElementById('banner-text')
     const bannerBtn = document.getElementById('banner-btn')
+    const overlay = document.getElementById('overlay')
+    const overlayText = document.getElementById('overlay-text')
+    let loadTimer = null
+    let loaded = false
     bannerBtn.addEventListener('click', () => vscode.postMessage({ command: 'startOrRetry' }))
     function showBanner(text, buttonLabel) {
       bannerText.textContent = text
@@ -95,21 +113,60 @@ export class DshEmbeddedBackend implements ChatBackend {
       banner.classList.add('visible')
     }
     function hideBanner() { banner.classList.remove('visible'); bannerBtn.hidden = true }
+    function showOverlay(text) {
+      overlayText.textContent = text
+      overlay.classList.add('visible')
+    }
+    function hideOverlay() {
+      overlay.classList.remove('visible')
+      clearTimeout(loadTimer)
+      loadTimer = null
+    }
+    // iframe finished loading the dsh UI — hide the loading overlay.
+    frame.addEventListener('load', () => {
+      loaded = true
+      hideOverlay()
+      hideBanner()
+    })
+    // Fallback: if the frame never reports load, surface a timeout with retry.
+    function armLoadTimer() {
+      clearTimeout(loadTimer)
+      loadTimer = setTimeout(() => {
+        if (overlay.classList.contains('visible')) {
+          showOverlay('界面加载超时。请检查 DSH 日志（命令面板 → DSH: Show server logs）。')
+        }
+      }, 45_000)
+    }
     window.addEventListener('message', (event) => {
       const msg = event.data
       if (!msg || msg.kind !== 'state') return
       const s = msg.state
       if (s.kind === 'running') {
         hideBanner()
-        if (frame.getAttribute('src') !== s.url) frame.setAttribute('src', s.url)
+        if (frame.getAttribute('src') !== s.url) {
+          frame.setAttribute('src', s.url)
+          loaded = false
+          showOverlay('正在加载 DSH 界面…')
+          armLoadTimer()
+        } else if (!loaded) {
+          // Same URL but never reported load (e.g. rebuilt shell): keep the
+          // overlay armed so the user can tell loading is still in progress.
+          showOverlay('正在加载 DSH 界面…')
+          armLoadTimer()
+        } else {
+          // Already loaded; nothing to wait for.
+          hideOverlay()
+        }
       } else if (s.kind === 'starting') {
         frame.removeAttribute('src')
-        showBanner('Starting dsh server…')
+        showOverlay('正在启动 dsh 服务器…（首次约 1 分钟）')
       } else if (s.kind === 'failed') {
         frame.removeAttribute('src')
+        hideOverlay()
         showBanner('⚠ ' + s.reason, 'Retry')
       } else {
         frame.removeAttribute('src')
+        hideOverlay()
         showBanner('dsh stopped.', 'Start')
       }
     })
