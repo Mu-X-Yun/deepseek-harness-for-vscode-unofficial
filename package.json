@@ -3,7 +3,8 @@
   "displayName": "DeepSeek Harness for VSCode Unofficial",
   "description": "Unofficial third-party VS Code client for DeepSeek Harness: embedded Web UI in the sidebar. Not affiliated with DeepSeek AI.",
   "version": "0.1.0",
-  "publisher": "Mu_X_Yun",
+  "publisher": "mu-x-yun",
+  "author": "Mu-X-Yun",
   "license": "MIT",
   "private": true,
   "engines": {
