@@ -1,7 +1,7 @@
 {
   "name": "dsh-vscode",
-  "displayName": "DeepSeek Harness (DSH)",
-  "description": "Run DeepSeek Harness in the VS Code sidebar: embedded Web UI (phase 1) and native chat (phase 2)",
+  "displayName": "DeepSeek Harness for VSCode Unofficial",
+  "description": "Unofficial third-party VS Code client for DeepSeek Harness (dsh): embedded Web UI and native chat in the sidebar. Not affiliated with DeepSeek AI.",
   "version": "0.1.0",
   "publisher": "local",
   "license": "MIT",

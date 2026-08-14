@@ -1,6 +1,17 @@
-# DSH for VS Code
+# DeepSeek Harness for VSCode Unofficial
 
-在 VS Code 侧边栏中使用 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness)（`dsh`）的扩展。
+> ⚠️ **非官方插件**：本项目由社区开发者维护，**与 DeepSeek AI 及其官方产品没有任何关联**，非 DeepSeek 官方发布、认可或支持。
+
+## 与官方 DeepSeek Harness（dsh）的联系
+
+本插件是官方 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness)（`dsh`，DeepSeek AI 开源的 MIT 项目）的**第三方 VS Code 客户端**，两者关系如下：
+
+- **不包含、不修改官方源码**：插件本身不含任何 dsh 代码，也不对其做补丁或修改；dsh 的源码、版权与发布权归 DeepSeek AI 所有。
+- **驱动方式**：插件启动你本机安装的 dsh（源码检出或安装包），通过其公开接口驱动：
+  - **embedded 模式**：spawn `dsh web`，在侧边栏 iframe 中嵌入官方 Web UI（界面本身即 dsh 官方 UI）
+  - **native 模式**：通过官方 JSON-RPC SDK（`@deepseek-ai/dsh-sdk-client`）协议驱动 dsh 运行时
+- **需要自备**：dsh 运行时（本仓库不随插件分发）与 DeepSeek API Key。
+- **上游依赖**：dsh 仍处开发者预览阶段（0.1.0-rc.x），其更新可能改变行为、影响本插件 —— 上游变更不受本插件控制。
 
 两种侧边栏界面（`dsh.ui.mode` 切换）：
 
