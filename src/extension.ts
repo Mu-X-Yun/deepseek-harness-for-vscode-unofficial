@@ -27,7 +27,7 @@ import {
   missingRuntimeFiles,
 } from './server/DshServerManager.ts'
 import { DshChatViewProvider } from './view/DshChatViewProvider.ts'
-import { DshEmbeddedBackend } from './view/DshEmbeddedBackend.ts'
+import { DshEmbeddedBackend, ISSUES_URL } from './view/DshEmbeddedBackend.ts'
 import { DshNativeBackend } from './view/DshNativeBackend.ts'
 import { SessionManager } from './sdk/SessionManager.ts'
 import { addWorkspace } from './workspace.ts'
@@ -217,7 +217,7 @@ export function activate(context: vscode.ExtensionContext): void {
       try {
         await server!.start()
       } catch (err) {
-        void vscode.window.showErrorMessage(`DSH failed to start: ${messageOf(err)}`)
+        showErrorWithReport(`DSH failed to start: ${messageOf(err)}`)
       }
     }),
     vscode.commands.registerCommand('dsh.stopServer', async () => {
@@ -261,7 +261,7 @@ export function activate(context: vscode.ExtensionContext): void {
   if (!native) {
     // Auto-start once, so opening the sidebar just works.
     void server.start().catch((err) => {
-      void vscode.window.showErrorMessage(`DSH failed to start: ${messageOf(err)}`)
+      showErrorWithReport(`DSH failed to start: ${messageOf(err)}`)
     })
   }
 }
@@ -276,6 +276,14 @@ export function deactivate(): Promise<void> {
   const tasks: Promise<void>[] = []
   if (sessions !== undefined) tasks.push(sessions.dispose())
   return Promise.all(tasks).then(() => {})
+}
+
+
+/** Error notification with a "report issue" action that opens GitHub issues. */
+function showErrorWithReport(message: string): void {
+  void vscode.window.showErrorMessage(message, '报告问题').then((choice) => {
+    if (choice === '报告问题') void vscode.env.openExternal(vscode.Uri.parse(ISSUES_URL))
+  })
 }
 
 function messageOf(err: unknown): string {

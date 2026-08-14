@@ -20,6 +20,9 @@ import * as vscode from 'vscode'
 import type { ChatBackend } from './DshChatBackend.ts'
 import type { DshServerManager, ServerState } from '../server/DshServerManager.ts'
 
+/** GitHub issues page for bug reports. */
+export const ISSUES_URL = 'https://github.com/Mu-X-Yun/deepseek-harness-for-vscode-unofficial/issues'
+
 interface ToWebviewMessage {
   kind: 'state'
   state: ServerState
@@ -112,7 +115,7 @@ export class DshEmbeddedBackend implements ChatBackend {
   </style>
 </head>
 <body>
-  <div id="banner"><span id="banner-text"></span><button id="banner-btn" hidden></button></div>
+  <div id="banner"><span id="banner-text"></span><button id="banner-btn" hidden></button><button id="issue-btn" hidden></button></div>
   <div id="overlay"><div class="spinner"></div><span id="overlay-text">Loading…</span><span id="install-note"></span></div>
   <iframe id="dsh-frame" title="DeepSeek Harness"></iframe>
   <div id="footer">
@@ -126,6 +129,7 @@ export class DshEmbeddedBackend implements ChatBackend {
     const banner = document.getElementById('banner')
     const bannerText = document.getElementById('banner-text')
     const bannerBtn = document.getElementById('banner-btn')
+    const issueBtn = document.getElementById('issue-btn')
     const overlay = document.getElementById('overlay')
     const overlayText = document.getElementById('overlay-text')
     const installNote = document.getElementById('install-note')
@@ -138,13 +142,16 @@ export class DshEmbeddedBackend implements ChatBackend {
     let installTimer = null
     let installStartedAt = null
     bannerBtn.addEventListener('click', () => vscode.postMessage({ command: 'startOrRetry' }))
-    function showBanner(text, buttonLabel) {
+    issueBtn.addEventListener('click', () => vscode.postMessage({ command: 'reportIssue' }))
+    function showBanner(text, buttonLabel, showIssue) {
       bannerText.textContent = text
       if (buttonLabel) { bannerBtn.textContent = buttonLabel; bannerBtn.hidden = false }
       else { bannerBtn.hidden = true }
+      issueBtn.textContent = '报告问题'
+      issueBtn.hidden = !showIssue
       banner.classList.add('visible')
     }
-    function hideBanner() { banner.classList.remove('visible'); bannerBtn.hidden = true }
+    function hideBanner() { banner.classList.remove('visible'); bannerBtn.hidden = true; issueBtn.hidden = true }
     function showOverlay(text) {
       overlayText.textContent = text
       overlay.classList.add('visible')
@@ -226,7 +233,7 @@ export class DshEmbeddedBackend implements ChatBackend {
       } else if (s.kind === 'failed') {
         frame.removeAttribute('src')
         hideOverlay()
-        showBanner('⚠ ' + s.reason, 'Retry')
+        showBanner('⚠ ' + s.reason, 'Retry', true)
       } else {
         frame.removeAttribute('src')
         hideOverlay()
@@ -260,6 +267,8 @@ export class DshEmbeddedBackend implements ChatBackend {
       void vscode.commands.executeCommand('dsh.addWorkspace')
     } else if (msg.command === 'openInBrowser') {
       void vscode.commands.executeCommand('dsh.openInBrowser')
+    } else if (msg.command === 'reportIssue') {
+      void vscode.env.openExternal(vscode.Uri.parse(ISSUES_URL))
     }
   }
 
