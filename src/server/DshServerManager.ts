@@ -17,7 +17,7 @@ import { join } from 'node:path'
 import * as vscode from 'vscode'
 import { findReadyUrl, type ReadyLine } from './portParser.ts'
 import type { DshConfig } from '../config.ts'
-export { dshBinIn, ensureSharpPin, findInstalledDsh, globalNpmRoot, hasDshBin, installedLaunch, missingRuntimeFiles, npxCacheDsh, SHARP_PIN, sharpVersion } from './runtimeDetect.ts'
+export { dshBinIn, ensureSharpPin, findInstalledDsh, globalNpmRoot, hasDshBin, installedLaunch, missingRuntimeFiles, npmCommand, npxCacheDsh, SHARP_PIN, sharpVersion } from './runtimeDetect.ts'
 export type { RuntimeLaunch } from './runtimeDetect.ts'
 import type { RuntimeLaunch } from './runtimeDetect.ts'
 
@@ -42,7 +42,7 @@ export interface DshServerManagerOptions {
   /** Ready-line timeout in ms (first boot of a fresh profile is slow on Windows). */
   readyTimeoutMs?: number
   /** Optional async preparation (e.g. auto-installing the runtime) before preflight/spawn. */
-  ensureRuntime?: (force?: boolean) => Promise<void>
+  ensureRuntime?: () => Promise<void>
   /** Directory for the persisted dsh state file (reuse across reloads). */
   storagePath: string
   /**
@@ -128,12 +128,23 @@ export class DshServerManager implements vscode.Disposable {
     // `npx @deepseek-ai/dsh web` themselves) is reused as-is.
     const external = await this.tryReuseWellKnownPort()
     if (external !== undefined) return external
-    // Report installation progress distinctly from server startup.
+    // Report installation progress distinctly from server startup. A failed
+    // install must transition to 'failed' (banner + Retry) instead of leaving
+    // the manager stuck in 'installing' with the timer armed forever — the
+    // webview only renders the Retry affordance on 'failed'.
     if (this.opts.ensureRuntime !== undefined) {
       this.armInstallTimeout()
       this.installStartedAt = Date.now()
       this.setState({ kind: 'installing', startedAt: this.installStartedAt })
-      await this.opts.ensureRuntime()
+      try {
+        await this.opts.ensureRuntime()
+      } catch (err) {
+        const message = messageOf(err)
+        clearTimeout(this.installTimer)
+        this.installTimer = undefined
+        this.setFailed(message)
+        throw err instanceof Error ? err : new Error(message)
+      }
       clearTimeout(this.installTimer)
       this.installTimer = undefined
     }
@@ -256,11 +267,11 @@ export class DshServerManager implements vscode.Disposable {
       this.attachExitWatch()
       return ready.url
     } catch (err) {
-      this.setFailed(err instanceof Error ? err.message : String(err))
+      this.setFailed(messageOf(err))
       // Flaky-network installs can leave partial packages (e.g. a missing
       // file inside typebox); surface a one-shot reinstall+retry instead of
       // failing permanently.
-      const message = err instanceof Error ? err.message : String(err)
+      const message = messageOf(err)
       // A fixed port already in use fails the boot; fall back to a random
       // port once (the caller flips its launch to --port 0).
       const stderrText = this.diagnostics
@@ -464,6 +475,11 @@ export class DshServerManager implements vscode.Disposable {
   private log(level: 'info' | 'warn' | 'error' | 'debug', message: string): void {
     this.opts.log(level, message)
   }
+}
+
+/** Error-to-string conversion shared by the host and the server manager. */
+export function messageOf(err: unknown): string {
+  return err instanceof Error ? err.message : String(err)
 }
 
 /** Matches module-resolution failures (missing/corrupt installs). */

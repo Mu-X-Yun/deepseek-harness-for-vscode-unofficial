@@ -7,7 +7,7 @@
 ### 功能
 
 - **embedded 模式**（默认）：侧边栏 iframe 嵌入 dsh 官方 Web UI
-- **native 模式**：基于官方 JSON-RPC SDK（`@deepseek-ai/dsh-sdk-client`）的自建聊天 UI —— 流式消息、工具卡片、会话树、停止/重建运行时
+- ~~native 模式~~（自 0.1.0 起禁用，见 README）：基于官方 JSON-RPC SDK（`@deepseek-ai/dsh-sdk-client`）的自建聊天 UI —— 流式消息、工具卡片、会话树、停止/重建运行时
 - **辅助侧边栏支持**：主/辅侧边栏同时显示，状态广播同步
 - **工作区集成**：状态栏按钮一键将当前 VS Code 工作区收编为 dsh 工作区（`workspace.create` RPC）
 - **进程管理**：系统 node 启动、stdout 就绪行解析、SIGTERM → taskkill 进程树清理、崩溃自动重启

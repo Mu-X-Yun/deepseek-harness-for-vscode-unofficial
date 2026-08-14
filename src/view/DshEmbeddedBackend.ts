@@ -223,6 +223,9 @@ export class DshEmbeddedBackend implements ChatBackend {
         showOverlay('正在安装 DeepSeek Harness…（首次需要下载，请耐心等待）')
         installNote.classList.toggle('visible', !!s.note)
         installNote.textContent = s.note || ''
+        // A retry after a failure re-enters installing: drop the stale
+        // failure banner so the overlay is not contradicted by it.
+        hideBanner()
         clearInterval(installTimer)
         installTimer = setInterval(() => {
           const elapsed = Date.now() - installStartedAt
@@ -237,10 +240,16 @@ export class DshEmbeddedBackend implements ChatBackend {
         showOverlay('正在启动 DeepSeek Harness 服务器…')
       } else if (s.kind === 'failed') {
         frame.removeAttribute('src')
+        clearInterval(installTimer)
+        installStartedAt = null
+        installNote.classList.remove('visible')
         hideOverlay()
         showBanner('⚠ ' + s.reason, 'Retry', true)
       } else {
         frame.removeAttribute('src')
+        clearInterval(installTimer)
+        installStartedAt = null
+        installNote.classList.remove('visible')
         hideOverlay()
         showBanner('DeepSeek Harness 已停止。', '启动')
       }

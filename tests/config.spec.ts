@@ -1,5 +1,27 @@
 import { describe, expect, it } from 'vitest'
-import { buildEnv } from '../src/config.ts'
+import { buildEnv, loadConfig } from '../src/config.ts'
+
+/** Minimal vscode.WorkspaceConfiguration stand-in. */
+function cfgOf(values: Record<string, unknown>): { get: <T>(key: string) => T | undefined } {
+  return { get: <T>(key: string): T | undefined => values[key] as T | undefined }
+}
+
+describe('loadConfig', () => {
+  it('defaults runtime.port to 3080 when unset', () => {
+    const cfg = loadConfig(() => cfgOf({}) as never)
+    expect(cfg.port).toBe(3080)
+  })
+
+  it('defaults runtime.mode to auto-install', () => {
+    const cfg = loadConfig(() => cfgOf({}) as never)
+    expect(cfg.runtimeMode).toBe('auto-install')
+  })
+
+  it('reads runtime.port from settings', () => {
+    const cfg = loadConfig(() => cfgOf({ 'runtime.port': 4000 }) as never)
+    expect(cfg.port).toBe(4000)
+  })
+})
 
 describe('buildEnv', () => {
   it('inherits the base environment', () => {

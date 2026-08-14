@@ -13,7 +13,6 @@ import { dirname } from 'node:path'
 import type * as vscode from 'vscode'
 
 export type RuntimeMode = 'repo' | 'installed' | 'auto-install'
-export type UiMode = 'embedded' // native 模式暂禁用（功能不完整）
 
 export interface DshConfig {
   /** DEEPSEEK_API_KEY from settings, undefined when unset. */
@@ -30,13 +29,15 @@ export interface DshConfig {
   permissionMode: string
   /** Default model id for new sessions. */
   model: string
-  /** Web server port (0 = random; default 3080). */
-  port: number | undefined
+  /**
+   * Web server port (0 = random; default 3080). The package.json default is
+   * the live source; the `?? 3080` below is a defensive fallback for
+   * configuration accessors that do not inject defaults.
+   */
+  port: number
   /** npm registry for auto-install (e.g. a mirror for faster downloads). */
   registry: string | undefined
   logLevel: string
-  /** Sidebar UI flavor. */
-  uiMode: UiMode
 }
 
 /**
@@ -53,10 +54,9 @@ export function loadConfig(get: () => vscode.WorkspaceConfiguration): DshConfig 
     nodePath: readString(cfg, 'runtime.nodePath'),
     permissionMode: readString(cfg, 'permissionMode') ?? 'workspace-write',
     model: readString(cfg, 'model') ?? 'deepseek-v4-flash',
-    port: cfg.get<number>('runtime.port'),
+    port: cfg.get<number>('runtime.port') ?? 3080,
     registry: readString(cfg, 'runtime.registry'),
     logLevel: readString(cfg, 'logLevel') ?? 'info',
-    uiMode: (readString(cfg, 'ui.mode') as UiMode | undefined) ?? 'embedded',
   }
 }
 

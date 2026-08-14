@@ -1,9 +1,9 @@
 {
   "name": "dsh-vscode",
   "displayName": "DeepSeek Harness for VSCode Unofficial",
-  "description": "Unofficial third-party VS Code client for DeepSeek Harness (dsh): embedded Web UI and native chat in the sidebar. Not affiliated with DeepSeek AI.",
+  "description": "Unofficial third-party VS Code client for DeepSeek Harness: embedded Web UI in the sidebar. Not affiliated with DeepSeek AI.",
   "version": "0.1.0",
-  "publisher": "local",
+  "publisher": "Mu_X_Yun",
   "license": "MIT",
   "private": true,
   "engines": {
@@ -132,14 +132,6 @@
           ],
           "default": "info",
           "markdownDescription": "Extension log verbosity (Output channel: DSH)."
-        },
-        "dsh.ui.mode": {
-          "type": "string",
-          "enum": [
-            "embedded"
-          ],
-          "default": "embedded",
-          "markdownDescription": "Sidebar UI. `embedded` iframes dsh's own Web UI (the native chat UI is temporarily disabled)."
         }
       }
     }
