@@ -85,6 +85,10 @@ export function activate(context: vscode.ExtensionContext): void {
       }
       case 'auto-install': {
         const runtimeRoot = join(context.globalStorageUri.fsPath, 'runtime')
+        // If the user already has a usable dsh (global install or npx
+        // cache from `npx @deepseek-ai/dsh web`), reuse it instead of
+        // downloading a fresh copy.
+        const detected = findInstalledDsh(config.runtimePath)
         // A fresh cache dir for self-heal reinstalls: the user's global npm
         // cache can hold corrupt entries (flaky-network downloads), which
         // reproduce missing files on every reinstall.
@@ -116,8 +120,9 @@ export function activate(context: vscode.ExtensionContext): void {
           })
         })
         return {
-          launch: installedLaunch(runtimeRoot, config.nodePath, portOf(useRandomPort, config)),
+          launch: installedLaunch(detected ?? runtimeRoot, config.nodePath, portOf(useRandomPort, config)),
           ensureRuntime: async (force = false) => {
+            if (detected !== undefined && !force) return
             // npm sharp 0.35.3 (broken release) must be pinned away before
             // (re)installing; overrides force the whole tree to SHARP_PIN.
             ensureSharpPin(runtimeRoot)
@@ -131,8 +136,11 @@ export function activate(context: vscode.ExtensionContext): void {
             await install()
           },
           preflight: () => {
-            if (!hasDshBin(runtimeRoot)) return ['dsh runtime is not installed yet (auto-install pending).']
-            const version = sharpVersion(runtimeRoot)
+            // Check the path actually used for launch (the detected npx/global
+            // install, not the extension's own runtime dir).
+            const activePath = detected ?? runtimeRoot
+            if (!hasDshBin(activePath)) return ['dsh runtime is not installed yet (auto-install pending).']
+            const version = sharpVersion(activePath)
             return version !== undefined && version !== SHARP_PIN
               ? [`sharp ${version} (broken release) still present after install; retry may be needed.`]
               : []

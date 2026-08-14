@@ -124,6 +124,10 @@ export class DshServerManager implements vscode.Disposable {
     // the process alive) can be reused instead of cold-starting (~1 min).
     const reused = await this.tryReuse()
     if (reused !== undefined) return reused
+    // A dsh web already running on the fixed port (e.g. the user launched
+    // `npx @deepseek-ai/dsh web` themselves) is reused as-is.
+    const external = await this.tryReuseWellKnownPort()
+    if (external !== undefined) return external
     // Report installation progress distinctly from server startup.
     if (this.opts.ensureRuntime !== undefined) {
       this.armInstallTimeout()
@@ -331,6 +335,31 @@ export class DshServerManager implements vscode.Disposable {
     } catch {
       // best-effort
     }
+  }
+
+  /**
+   * Reuses a dsh web already listening on the launch's fixed port. This
+   * covers a user-started `npx @deepseek-ai/dsh web`: adopting the running
+   * instance avoids both a redundant install and a port/profile conflict.
+   * Detection: the dsh index page embeds the `window.__DSH_BOOT__` manifest.
+   */
+  private async tryReuseWellKnownPort(): Promise<string | undefined> {
+    const args = this.opts.launch().args
+    const portIndex = args.indexOf('--port')
+    const portArg = portIndex >= 0 ? args[portIndex + 1] : undefined
+    if (portArg === undefined || portArg === '0') return undefined
+    const url = `http://127.0.0.1:${portArg}`
+    try {
+      const response = await fetch(url, { method: 'GET', signal: AbortSignal.timeout(3_000) })
+      if (!response.ok) return undefined
+      const text = await response.text()
+      if (!text.includes('__DSH_BOOT__')) return undefined
+    } catch {
+      return undefined
+    }
+    this.log('info', `reusing externally started dsh web at ${url}`)
+    this.setState({ kind: 'running', url, port: Number(portArg) })
+    return url
   }
 
   /** Reuses a persisted running server when its URL still responds. */
