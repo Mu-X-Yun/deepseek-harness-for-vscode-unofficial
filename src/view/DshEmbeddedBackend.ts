@@ -63,8 +63,8 @@ export class DshEmbeddedBackend implements ChatBackend {
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>DSH</title>
   <style>
-    html, body { margin: 0; padding: 0; height: 100%; overflow: hidden; }
-    #dsh-frame { position: absolute; top: 0; left: 0; right: 0; bottom: 28px; width: 100%; border: none; display: block; }
+    html, body { margin: 0; padding: 0; height: 100%; overflow: hidden; display: flex; flex-direction: column; }
+    #dsh-frame { flex: 1; min-height: 0; width: 100%; border: none; display: block; }
     #banner {
       position: fixed; top: 0; left: 0; right: 0; z-index: 10;
       padding: 8px 12px; font-size: 12px; box-sizing: border-box;
@@ -95,12 +95,15 @@ export class DshEmbeddedBackend implements ChatBackend {
     }
     #install-note.visible { display: block; }
     #footer {
-      position: fixed; bottom: 0; left: 0; right: 0; z-index: 9; height: 28px;
+      flex: none; height: 28px; z-index: 9;
       display: flex; align-items: center; gap: 8px; padding: 0 10px;
       font-size: 11px; box-sizing: border-box;
       color: var(--vscode-foreground); background: var(--vscode-editor-background);
       border-top: 1px solid var(--vscode-widget-border, #ccc);
     }
+    /* Mirror layout for the secondary sidebar (narrow view): port on the
+       right, workspace button on the left. */
+    #footer.mirror { flex-direction: row-reverse; }
     #footer button {
       border: none; cursor: pointer; padding: 2px 8px; border-radius: 3px;
       color: var(--vscode-button-foreground); background: var(--vscode-button-background);
@@ -112,7 +115,7 @@ export class DshEmbeddedBackend implements ChatBackend {
 </head>
 <body>
   <div id="banner"><span id="banner-text"></span><button id="banner-btn" hidden></button></div>
-  <div id="overlay"><div class="spinner"></div><span id="overlay-text">Loading…</span><div id="progress"><div id="progress-fill"></div></div><span id="install-note"></span></div>
+  <div id="overlay"><div class="spinner"></div><span id="overlay-text">Loading…</span><span id="install-note"></span></div>
   <div id="footer">
     <button class="port-btn" id="port-btn" title="在浏览器中打开"></button>
     <span class="spacer"></span>
@@ -136,6 +139,14 @@ export class DshEmbeddedBackend implements ChatBackend {
     let loaded = false
     let installTimer = null
     let installStartedAt = null
+    // The secondary sidebar is typically narrower; mirror the footer so the
+    // port lands on the right and the workspace button on the left there.
+    const footerEl = document.getElementById('footer')
+    function applyMirror() {
+      footerEl.classList.toggle('mirror', window.innerWidth < 350)
+    }
+    applyMirror()
+    window.addEventListener('resize', applyMirror)
     bannerBtn.addEventListener('click', () => vscode.postMessage({ command: 'startOrRetry' }))
     function showBanner(text, buttonLabel) {
       bannerText.textContent = text
