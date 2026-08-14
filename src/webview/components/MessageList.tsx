@@ -9,8 +9,17 @@ export function MessageList({ items }: { items: UiItem[] }): JSX.Element {
 
   // Track `items`, not `items.length`: streamed chunks grow the text of one
   // item in place, so the length does not change while the bubble grows.
+  // Only follow the stream while the user is near the bottom; smooth
+  // scrolling per token would otherwise yank the viewport out from under
+  // someone reading history during a long reply.
   useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
+    const anchor = bottomRef.current
+    if (anchor === null) return
+    const scroller = anchor.parentElement
+    if (scroller !== null && scroller.scrollHeight > scroller.clientHeight) {
+      if (scroller.scrollHeight - scroller.scrollTop - scroller.clientHeight > 120) return
+    }
+    anchor.scrollIntoView({ behavior: 'smooth' })
   }, [items])
 
   return (

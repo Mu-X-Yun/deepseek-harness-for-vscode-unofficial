@@ -231,21 +231,30 @@ describe('renderEvents', () => {
 
   it('does not double-accumulate streaming chunks when a buffer without assistant/message is replayed', () => {
     // Turn was stopped mid-stream: the buffer holds chunks but no message.
+    const seen = new Set<number>()
     const buffer = [chunk(80, 1, 1, 'hel'), chunk(81, 1, 1, 'lo')]
     let items: ReturnType<typeof renderEvents> = []
-    for (const e of buffer) items = renderEvents([e], items)
+    for (const e of buffer) items = renderEvents([e], items, seen)
     expect(items[0]?.text).toBe('hello')
-    // selectSession replays the whole buffer again.
-    items = renderEvents(buffer, items)
-    expect(items).toHaveLength(1)
-    expect(items[0]?.text).toBe('hello')
+    // selectSession replays the whole buffer again: chunks are seen, so the
+    // streaming item is not re-accumulated and the result is unchanged.
+    const replay = renderEvents(buffer, items, seen)
+    expect(replay).toBe(items)
+    expect(replay[0]?.text).toBe('hello')
   })
 
-  it('skips replacement when surfaceOp replace points outside the rendered range', () => {
-    const items = renderEvents([
-      userEvent,
-      ev(90, 'assistant/message', { turn: 2, step: 1, message: { role: 'assistant', content: [{ type: 'text', text: 'x' }] } }, { surfaceOp: { op: 'replace', start: 5, end: 6 } }),
-    ])
-    expect(items.map((i) => i.role)).toEqual(['user', 'assistant'])
+  it('does not resurrect streamed chunks below a checkpoint on replay', () => {
+    // Live: streamed chunks + message, then compaction replaced the span.
+    const seen = new Set<number>()
+    const buffer = [userEvent, chunk(80, 1, 1, 'hel'), chunk(81, 1, 1, 'lo'), assistantEvent]
+    let items: ReturnType<typeof renderEvents> = []
+    for (const e of [...buffer, checkpoint]) items = renderEvents([e], items, seen)
+    expect(items.map((i) => i.role)).toEqual(['assistant'])
+    expect(items[0]?.text).toBe('compacted')
+    // Replay the full buffer (chunks included): nothing is rebuilt below the
+    // checkpoint — a re-folded streaming item would duplicate the reply.
+    const replay = renderEvents([...buffer, checkpoint], items, seen)
+    expect(replay).toBe(items)
+    expect(replay.map((i) => i.role)).toEqual(['assistant'])
   })
 })

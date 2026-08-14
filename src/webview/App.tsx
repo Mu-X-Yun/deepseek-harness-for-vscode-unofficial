@@ -66,6 +66,9 @@ const initialState: ChatState = {
   error: undefined,
 }
 
+/** Stable empty list so MessageList's scroll effect does not fire on every render. */
+const EMPTY_ITEMS: UiItem[] = []
+
 /** VS Code webview API, injected by the harness. */
 declare function acquireVsCodeApi(): {
   postMessage(message: WebviewToHostMessage): void
@@ -88,13 +91,13 @@ export function App(): JSX.Element {
     const prev = itemsRef.current.get(sessionId) ?? []
     const seen = seenSeqsRef.current.get(sessionId) ?? new Set<number>()
     const items = renderEvents(events, prev, seen)
-    seenSeqsRef.current = new Map(seenSeqsRef.current).set(sessionId, seen)
-    // Length alone is not a change signal: streaming chunks grow the text of
-    // an existing item and assistant/message supersedes the streaming item
-    // with the same length. renderEvents preserves references of untouched
-    // items, so an element-wise identity compare is exact and cheap.
-    if (prev.length === items.length && prev.every((it, i) => it === items[i])) return // nothing new (seq-deduped)
-    itemsRef.current = new Map(itemsRef.current).set(sessionId, items)
+    // These refs are never read by React rendering; mutate in place (O(1)).
+    seenSeqsRef.current.set(sessionId, seen)
+    // renderEvents returns `prev` itself when nothing changed (seq-deduped),
+    // so the identity compare is O(1) — length alone is not a change signal,
+    // since streamed chunks grow an existing item's text in place.
+    if (items === prev) return
+    itemsRef.current.set(sessionId, items)
     dispatch({ type: 'items', sessionId, items })
   }, [])
 
@@ -158,7 +161,8 @@ export function App(): JSX.Element {
     dispatch({ type: 'active', sessionId: `session-${Date.now()}` })
   }, [])
 
-  const activeItems = state.activeSessionId !== undefined ? (state.itemsBySession.get(state.activeSessionId) ?? []) : []
+  const activeItems =
+    state.activeSessionId !== undefined ? (state.itemsBySession.get(state.activeSessionId) ?? EMPTY_ITEMS) : EMPTY_ITEMS
 
   return (
     <div className="app">

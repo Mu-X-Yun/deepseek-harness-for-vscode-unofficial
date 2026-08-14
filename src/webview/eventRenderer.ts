@@ -10,9 +10,12 @@
  *
  * Wire payload shapes (as emitted by the host, not invented by tests):
  *  - `assistant/chunk`: `data = { turn, step, chunk: StreamChunk }` where
- *    StreamChunk is a discriminated union; bubble text lives at
- *    `data.chunk.text` for `text-delta`/`reasoning-delta`, and at
- *    `data.chunk.block.text` for `block-end`.
+ *    StreamChunk is a discriminated union; incremental bubble text lives at
+ *    `data.chunk.text` on `text-delta`/`reasoning-delta`. `block-end` is
+ *    deliberately NOT accumulated: the llm-deepseek adapter emits deltas as
+ *    they arrive and all block-ends with the FULL assembled block text at
+ *    [DONE], so appending it would double the bubble. The delta stream
+ *    already sums to the full text.
  *  - `tool/result`: `data = { turn, step, message, error?, meta? }` where
  *    `message.source = { kind: 'tool', callId }` — there is no top-level
  *    `callId` on the payload.
@@ -42,8 +45,6 @@ export interface UiItem {
   step?: number
   /** True for the in-progress item token chunks accumulate into. */
   streaming?: boolean
-  /** Highest chunk seq folded into a streaming item (replay guard). */
-  streamingLastSeq?: number
 }
 
 /** The fields the renderer reads from an event (a structural subset of SessionEvent). */
@@ -59,7 +60,7 @@ export interface RenderableEvent {
     name?: string
     arguments?: string
     content?: unknown
-    chunk?: { type?: string; text?: string; block?: { text?: string } }
+    chunk?: { type?: string; text?: string }
     message?: {
       role?: string
       content?: unknown
@@ -201,19 +202,12 @@ export function renderEvent(event: RenderableEvent, index: number): UiItem | und
   }
 }
 
-/**
- * Removes every item matching `pred` (in place); returns how many were removed.
- */
-function removeWhere(items: UiItem[], pred: (item: UiItem) => boolean): number {
-  let removed = 0
+/** Removes every item matching `pred` (in place). */
+function removeWhere(items: UiItem[], pred: (item: UiItem) => boolean): void {
   for (let i = items.length - 1; i >= 0; i--) {
     const it = items[i]
-    if (it !== undefined && pred(it)) {
-      items.splice(i, 1)
-      removed++
-    }
+    if (it !== undefined && pred(it)) items.splice(i, 1)
   }
-  return removed
 }
 
 /**
@@ -221,17 +215,16 @@ function removeWhere(items: UiItem[], pred: (item: UiItem) => boolean): number {
  * assistant item. The step's `assistant/message` supersedes that item, so
  * token chunks never surface as individual meta rows (live or replay).
  * Chunks without bubble text (usage/finish/tool-call-delta) are dropped.
- *
- * `streamingLastSeq` guards against double accumulation: replaying a buffer
- * that has no `assistant/message` (e.g. a stopped turn) would otherwise
- * fold every chunk into the streaming item again, doubling its text.
+ * Replay protection lives in `renderEvents`' `seenSeqs`, so a replayed
+ * chunk never reaches this fold twice.
+ * @returns true when the item list changed.
  */
-function foldChunk(items: UiItem[], event: RenderableEvent): void {
+function foldChunk(items: UiItem[], event: RenderableEvent): boolean {
   const d = event.data
   const turn = d?.turn
   const step = d?.step
   const text = chunkTextOf(d)
-  if (text === undefined) return
+  if (text === undefined) return false
   const last = items[items.length - 1]
   if (
     last !== undefined &&
@@ -240,13 +233,7 @@ function foldChunk(items: UiItem[], event: RenderableEvent): void {
     last.turn === turn &&
     last.step === step
   ) {
-    // Chunks arrive in seq order; a seq already folded into this item is a replay.
-    if (event.seq !== undefined && last.streamingLastSeq !== undefined && event.seq <= last.streamingLastSeq) return
-    items[items.length - 1] = {
-      ...last,
-      text: `${last.text ?? ''}${text}`,
-      streamingLastSeq: event.seq ?? last.streamingLastSeq,
-    }
+    items[items.length - 1] = { ...last, text: `${last.text ?? ''}${text}` }
   } else {
     items.push({
       key: `${turn ?? 0}-${step ?? 0}-stream`,
@@ -256,20 +243,21 @@ function foldChunk(items: UiItem[], event: RenderableEvent): void {
       text,
       turn,
       step,
-      streamingLastSeq: event.seq,
     })
   }
+  return true
 }
 
 /**
- * Applies a compaction `surfaceOp: { op: 'replace', start, end }`. Per the
- * host's surface semantics (packages/core/session/src/surface.ts resolves
- * the range with `state.nodes.indexOf(op.start)`), `start`/`end` are SEQ
- * numbers of surface events, not positional indexes — every event with
- * `seq` in [start..end] is shadowed, and the whole span of history (tool
- * cards, turn markers, chunks included) is replaced by the checkpoint
- * message `item`, inserted at the first shadowed position. A replace whose
- * span is not rendered (e.g. the shadowed items were already removed by an
+ * Applies a compaction `surfaceOp: { op: 'replace', start, end }`, where
+ * `start`/`end` are SEQ numbers of surface events (the host's
+ * packages/core/session/src/surface.ts resolves the range via
+ * `state.nodes.indexOf(op.start)`). Transcript semantics here are
+ * deliberately broader than the host's model surface: every rendered item
+ * with `seq` in [start..end] is shadowed — tool cards, turn markers and
+ * chunks are all part of the compacted history — and the checkpoint
+ * message `item` takes their place at the first shadowed position. A
+ * replace whose span is not rendered (e.g. it was already applied by an
  * earlier replay) appends instead of silently dropping the checkpoint.
  */
 function applySurfaceOp(items: UiItem[], event: RenderableEvent, item: UiItem): void {
@@ -279,21 +267,15 @@ function applySurfaceOp(items: UiItem[], event: RenderableEvent, item: UiItem): 
     return
   }
   const { start, end } = op
-  // Walk backwards so earlier indexes stay valid while splicing; `first`
-  // ends up as the lowest removed index (the replacement's position).
-  let first = -1
-  for (let i = items.length - 1; i >= 0; i--) {
-    const it = items[i]
-    if (it !== undefined && it.seq !== undefined && it.seq >= start && it.seq <= end) {
-      first = i
-      items.splice(i, 1)
-    }
-  }
+  const first = items.findIndex((it) => it.seq !== undefined && it.seq >= start && it.seq <= end)
   if (first === -1) {
     items.push(item)
     return
   }
-  items.splice(first, 0, item)
+  // One pass: keep items outside the span (and seq-less items like a
+  // lingering streaming item), drop the shadowed span, insert at `first`.
+  const kept = items.filter((it) => it.seq === undefined || it.seq < start || it.seq > end)
+  items.splice(0, items.length, ...kept.slice(0, first), item, ...kept.slice(first))
 }
 
 /**
@@ -310,29 +292,31 @@ function applySurfaceOp(items: UiItem[], event: RenderableEvent, item: UiItem): 
  *   instead of duplicating the transcript. The set is kept OUTSIDE the
  *   items: compaction removes shadowed items from `prev`, but their seqs
  *   must stay known so a later replay of the same buffer does not
- *   re-append the raw history next to the checkpoint summary.
+ *   re-append the raw history next to the checkpoint summary. Chunks are
+ *   deduped the same way — a replayed chunk must not be folded into the
+ *   streaming item a second time.
  * - Compaction `surfaceOp: { op: 'replace', start, end }` removes the
  *   shadowed seq span and inserts the replacement in its place.
+ * - Returns `prev` itself (same reference) when nothing changed, so the
+ *   caller can skip re-rendering with an O(1) identity compare.
  */
 export function renderEvents(events: RenderableEvent[], prev: UiItem[] = [], seenSeqs?: Set<number>): UiItem[] {
   const seen = seenSeqs ?? new Set<number>()
   const items = [...prev]
-  for (let index = 0; index < events.length; index++) {
-    const event = events[index]
-    if (event === undefined) continue
+  let changed = false
+  for (const [index, event] of events.entries()) {
+    if (event.seq !== undefined && seen.has(event.seq)) continue // already rendered
     if (event.type === 'assistant/chunk') {
-      // Chunk replays are guarded by the streaming item's streamingLastSeq;
-      // the seq stays out of `seen` so foldChunk can re-accumulate a fresh
-      // streaming item after its message was already superseded.
-      foldChunk(items, event)
+      if (event.seq !== undefined) seen.add(event.seq)
+      if (foldChunk(items, event)) changed = true
       continue
     }
     const item = renderEvent(event, index)
     if (item === undefined) continue
     if (item.role === 'assistant') {
       // Supersede the step's streaming item and any leftover chunk metas.
-      // Runs BEFORE the seq dedup check so a replay that rebuilt a streaming
-      // item from the buffer still folds it away when its message is seen.
+      // Runs BEFORE the seq dedup check so a live path that superseded a
+      // step cleanly stays clean on replay.
       removeWhere(
         items,
         (it) =>
@@ -341,11 +325,9 @@ export function renderEvents(events: RenderableEvent[], prev: UiItem[] = [], see
           it.step === item.step,
       )
     }
-    if (event.seq !== undefined) {
-      if (seen.has(event.seq)) continue // already rendered
-      seen.add(event.seq)
-    }
+    if (event.seq !== undefined) seen.add(event.seq)
     applySurfaceOp(items, event, item)
+    changed = true
   }
-  return items
+  return changed ? items : prev
 }
