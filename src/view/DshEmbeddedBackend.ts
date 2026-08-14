@@ -159,7 +159,7 @@ export class DshEmbeddedBackend implements ChatBackend {
         }
       } else if (s.kind === 'starting') {
         frame.removeAttribute('src')
-        showOverlay('正在启动 dsh 服务器…（首次约 1 分钟）')
+        showOverlay('正在启动 dsh 服务器…')
       } else if (s.kind === 'failed') {
         frame.removeAttribute('src')
         hideOverlay()
