@@ -91,3 +91,31 @@ export function npxCacheDsh(): string | undefined {
   }
   return newest
 }
+
+/** The node executable used to spawn dsh (system node, not Code.exe). */
+export function nodeCommand(configuredPath: string | undefined): string {
+  return configuredPath ?? 'node'
+}
+
+/**
+ * Builds the installed-mode runtime launch for an npm-installed dsh.
+ * Uses `--profile web` (not the `web` alias) so launcher flags like
+ * `--patch` are accepted, and applies the attachment-disabling overlay:
+ * npm sharp ≥ 0.35 is broken (sharp.mjs requires the legacy `sharp.node`
+ * path), so attachment-local must be disabled to boot at all.
+ */
+export function installedLaunch(runtimePath: string, nodePath: string | undefined, overlayPath: string): RuntimeLaunch {
+  const bin = dshBinIn(runtimePath)
+  return {
+    command: nodeCommand(nodePath),
+    args: [bin, '--profile', 'web', '--patch', overlayPath, '--port', '0'],
+    cwd: runtimePath,
+  }
+}
+
+export interface RuntimeLaunch {
+  command: string
+  args: string[]
+  /** Working directory for the child (also anchors module resolution). */
+  cwd: string
+}

@@ -2,7 +2,7 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { findInstalledDsh, hasDshBin, npxCacheDsh } from '../src/server/runtimeDetect.ts'
+import { findInstalledDsh, hasDshBin, installedLaunch, npxCacheDsh } from '../src/server/runtimeDetect.ts'
 
 const ORIG_LOCALAPPDATA = process.env.LOCALAPPDATA
 
@@ -75,5 +75,16 @@ describe('findInstalledDsh', () => {
     if (ORIG_LOCALAPPDATA === undefined) vi.unstubAllEnvs()
     else vi.stubEnv('LOCALAPPDATA', ORIG_LOCALAPPDATA)
     rmSync(la, { recursive: true, force: true })
+  })
+})
+
+describe('installedLaunch', () => {
+  it('produces a valid node invocation (bin first, launcher flags after)', () => {
+    const launch = installedLaunch('C:/rt', undefined, 'C:/overlay.yml')
+    expect(launch.command).toBe('node')
+    expect(launch.args[0]).toBe(join('C:/rt', 'node_modules', '@deepseek-ai', 'dsh', 'lib', 'bin.js'))
+    expect(launch.args).toContain('--profile')
+    expect(launch.args).toContain('--patch')
+    expect(launch.args).toContain('C:/overlay.yml')
   })
 })

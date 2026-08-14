@@ -17,7 +17,9 @@ import { join } from 'node:path'
 import * as vscode from 'vscode'
 import { findReadyUrl, type ReadyLine } from './portParser.ts'
 import type { DshConfig } from '../config.ts'
-export { dshBinIn, findInstalledDsh, globalNpmRoot, hasDshBin, npxCacheDsh } from './runtimeDetect.ts'
+export { dshBinIn, findInstalledDsh, globalNpmRoot, hasDshBin, installedLaunch, npxCacheDsh } from './runtimeDetect.ts'
+export type { RuntimeLaunch } from './runtimeDetect.ts'
+import type { RuntimeLaunch } from './runtimeDetect.ts'
 
 export type ServerState =
   | { kind: 'stopped' }
@@ -40,13 +42,6 @@ export interface DshServerManagerOptions {
   readyTimeoutMs?: number
   /** Optional async preparation (e.g. auto-installing the runtime) before preflight/spawn. */
   ensureRuntime?: () => Promise<void>
-}
-
-export interface RuntimeLaunch {
-  command: string
-  args: string[]
-  /** Working directory for the child (also anchors module resolution). */
-  cwd: string
 }
 
 /** How many auto-restarts are attempted after an unexpected exit. */
@@ -312,22 +307,6 @@ export function repoLaunch(repoPath: string, nodePath?: string): RuntimeLaunch {
     command: nodeCommand(nodePath),
     args: ['--import', 'tsx/esm', join(repoPath, 'apps', 'cli', 'src', 'bin.ts'), 'web', '--port', '0'],
     cwd: repoPath,
-  }
-}
-
-/**
- * Builds the installed-mode runtime launch for an npm-installed dsh.
- * Uses `--profile web` (not the `web` alias) so launcher flags like
- * `--patch` are accepted, and applies the attachment-disabling overlay:
- * npm sharp ≥ 0.35 is broken (sharp.mjs requires the legacy `sharp.node`
- * path), so attachment-local must be disabled to boot at all.
- */
-export function installedLaunch(runtimePath: string, nodePath: string | undefined, overlayPath: string): RuntimeLaunch {
-  const bin = join(runtimePath, 'node_modules', '@deepseek-ai', 'dsh', 'lib', 'bin.js')
-  return {
-    command: nodeCommand(nodePath),
-    args: ['--profile', 'web', '--patch', overlayPath, '--port', '0'],
-    cwd: runtimePath,
   }
 }
 
