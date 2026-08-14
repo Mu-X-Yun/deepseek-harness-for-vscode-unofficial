@@ -144,6 +144,7 @@ export function activate(context: vscode.ExtensionContext): void {
       await resolveRuntime().ensureRuntime?.()
     },
     log: (level, message) => logChannel?.appendLine(`[${level}] ${message}`),
+    storagePath: context.globalStorageUri.fsPath,
   })
 
   // Sidebar view: pick the backend by ui mode.
@@ -252,14 +253,14 @@ export function activate(context: vscode.ExtensionContext): void {
 }
 
 /**
- * Awaits full teardown of the dsh child processes. On window reload VS Code
- * waits for this promise; leaving children running would let the next
- * activation's spawn collide with the old process.
+ * Tears down the session plane only. The dsh server process is deliberately
+ * left running and persisted: a window reload reuses it instantly (no
+ * 1-minute cold start), and a stale process is detected by a health check on
+ * the next activation. Use `DSH: Stop server` to stop it explicitly.
  */
 export function deactivate(): Promise<void> {
   const tasks: Promise<void>[] = []
   if (sessions !== undefined) tasks.push(sessions.dispose())
-  if (server !== undefined) tasks.push(server.dispose())
   return Promise.all(tasks).then(() => {})
 }
 

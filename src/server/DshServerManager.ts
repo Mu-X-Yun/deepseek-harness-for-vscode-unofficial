@@ -12,7 +12,7 @@
  */
 
 import { execFile, spawn, type ChildProcess } from 'node:child_process'
-import { accessSync } from 'node:fs'
+import { accessSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import * as vscode from 'vscode'
 import { findReadyUrl, type ReadyLine } from './portParser.ts'
@@ -42,6 +42,16 @@ export interface DshServerManagerOptions {
   readyTimeoutMs?: number
   /** Optional async preparation (e.g. auto-installing the runtime) before preflight/spawn. */
   ensureRuntime?: () => Promise<void>
+  /** Directory for the persisted dsh state file (reuse across reloads). */
+  storagePath: string
+}
+
+/** Persisted shape of a running dsh server (survives extension reloads). */
+interface PersistedState {
+  url: string
+  port: number
+  pid: number
+  startedAt: number
 }
 
 /** How many auto-restarts are attempted after an unexpected exit. */
@@ -93,6 +103,10 @@ export class DshServerManager implements vscode.Disposable {
       const settled = this.state
       if (settled.kind === 'running') return settled.url
     }
+    // A dsh server persisted by a previous activation (window reload keeps
+    // the process alive) can be reused instead of cold-starting (~1 min).
+    const reused = await this.tryReuse()
+    if (reused !== undefined) return reused
     await this.opts.ensureRuntime?.()
     const problems = this.opts.preflight()
     if (problems.length > 0) {
@@ -109,6 +123,14 @@ export class DshServerManager implements vscode.Disposable {
     clearTimeout(this.readyTimer)
     const child = this.child
     if (child === undefined || child.exitCode !== null || child.signalCode !== null) {
+      // No live child in this instance. A reused server (from a previous
+      // activation) is owned by a foreign pid recorded in the persisted
+      // state — kill it directly.
+      const persisted = this.readPersisted()
+      this.clearPersisted()
+      if (persisted !== undefined && this.state.kind === 'running') {
+        await this.taskkill(persisted.pid)
+      }
       this.stopping = false
       this.setState({ kind: 'stopped' })
       return
@@ -201,12 +223,73 @@ export class DshServerManager implements vscode.Disposable {
       ])
       this.restartCount = 0
       this.setState({ kind: 'running', url: ready.url, port: ready.port })
+      this.persist(child.pid ?? -1)
       this.attachExitWatch()
       return ready.url
     } catch (err) {
       this.setFailed(err instanceof Error ? err.message : String(err))
       throw err
     }
+  }
+
+  // ------------------------------------------------------------------ //
+  // Persisted-state reuse: a dsh server started by a previous activation
+  // survives window reloads (deactivate leaves it running); a fresh
+  // activation reuses it instead of cold-starting.
+
+  private stateFile(): string {
+    return join(this.opts.storagePath, 'dsh-state.json')
+  }
+
+  private persist(pid: number): void {
+    try {
+      writeFileSync(this.stateFile(), JSON.stringify({
+        url: this.state.kind === 'running' ? this.state.url : '',
+        port: this.state.kind === 'running' ? this.state.port : 0,
+        pid,
+        startedAt: Date.now(),
+      } satisfies PersistedState), 'utf8')
+    } catch {
+      // Persistence is best-effort; a failed write just means no reuse.
+    }
+  }
+
+  private readPersisted(): PersistedState | undefined {
+    try {
+      const raw = readFileSync(this.stateFile(), 'utf8')
+      const state = JSON.parse(raw) as Partial<PersistedState>
+      if (typeof state.url === 'string' && typeof state.port === 'number' && typeof state.pid === 'number') {
+        return state as PersistedState
+      }
+    } catch {
+      // no state file yet
+    }
+    return undefined
+  }
+
+  private clearPersisted(): void {
+    try {
+      writeFileSync(this.stateFile(), '', 'utf8')
+    } catch {
+      // best-effort
+    }
+  }
+
+  /** Reuses a persisted running server when its URL still responds. */
+  private async tryReuse(): Promise<string | undefined> {
+    const persisted = this.readPersisted()
+    if (persisted === undefined) return undefined
+    try {
+      const response = await fetch(persisted.url, { method: 'GET', signal: AbortSignal.timeout(3_000) })
+      if (!response.ok) throw new Error(`HTTP ${response.status}`)
+    } catch {
+      // Not reachable anymore; fall through to a cold start.
+      this.clearPersisted()
+      return undefined
+    }
+    this.log('info', `reusing dsh server at ${persisted.url} (pid ${persisted.pid})`)
+    this.setState({ kind: 'running', url: persisted.url, port: persisted.port })
+    return persisted.url
   }
 
   private attachExitWatch(): void {
