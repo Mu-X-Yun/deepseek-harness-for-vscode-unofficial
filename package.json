@@ -15,6 +15,10 @@
     "Chat"
   ],
   "icon": "media/icon.png",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Mu-X-Yun/deepseek-harness-for-vscode-unofficial.git"
+  },
   "main": "./out/extension.js",
   "contributes": {
     "viewsContainers": {
