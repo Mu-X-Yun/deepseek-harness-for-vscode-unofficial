@@ -146,20 +146,23 @@ export class DshEmbeddedBackend implements ChatBackend {
         if (frame.getAttribute('src') !== s.url) {
           frame.setAttribute('src', s.url)
           loaded = false
-          showOverlay('正在加载 DSH 界面…')
+          showOverlay('正在加载 DeepSeek Harness 界面…')
           armLoadTimer()
         } else if (!loaded) {
           // Same URL but never reported load (e.g. rebuilt shell): keep the
           // overlay armed so the user can tell loading is still in progress.
-          showOverlay('正在加载 DSH 界面…')
+          showOverlay('正在加载 DeepSeek Harness 界面…')
           armLoadTimer()
         } else {
           // Already loaded; nothing to wait for.
           hideOverlay()
         }
+      } else if (s.kind === 'installing') {
+        frame.removeAttribute('src')
+        showOverlay('正在安装 DeepSeek Harness…（首次需要下载，请耐心等待）')
       } else if (s.kind === 'starting') {
         frame.removeAttribute('src')
-        showOverlay('正在启动 dsh 服务器…')
+        showOverlay('正在启动 DeepSeek Harness 服务器…')
       } else if (s.kind === 'failed') {
         frame.removeAttribute('src')
         hideOverlay()
@@ -167,7 +170,7 @@ export class DshEmbeddedBackend implements ChatBackend {
       } else {
         frame.removeAttribute('src')
         hideOverlay()
-        showBanner('dsh stopped.', 'Start')
+        showBanner('DeepSeek Harness 已停止。', '启动')
       }
     })
     // Handshake: ask the host for the current state once the listener is

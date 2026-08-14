@@ -7,6 +7,7 @@
  */
 
 import { execFile } from 'node:child_process'
+import { rmSync } from 'node:fs'
 import { join } from 'node:path'
 import * as vscode from 'vscode'
 import { buildEnv, defaultRepoPath, loadConfig, type DshConfig } from './config.ts'
@@ -45,7 +46,12 @@ export function activate(context: vscode.ExtensionContext): void {
   // require restarting the extension.
   const readConfig = (): DshConfig => loadConfig(() => vscode.workspace.getConfiguration('dsh'))
 
-  const resolveRuntime = (): { launch: RuntimeLaunch; preflight: () => string[]; ensureRuntime?: () => Promise<void> } => {
+  const resolveRuntime = (): {
+    launch: RuntimeLaunch
+    preflight: () => string[]
+    ensureRuntime?: (force?: boolean) => Promise<void>
+    onModuleMissing?: () => Promise<boolean>
+  } => {
     const config = readConfig()
     switch (config.runtimeMode) {
       case 'installed': {
@@ -77,25 +83,27 @@ export function activate(context: vscode.ExtensionContext): void {
       }
       case 'auto-install': {
         const runtimeRoot = join(context.globalStorageUri.fsPath, 'runtime')
+        const install = (): Promise<void> => new Promise<void>((resolve, reject) => {
+          // shell: true is required on Windows: .cmd shims (npm.cmd) cannot
+          // be launched directly via CreateProcess and fail with EINVAL.
+          // Shell mode concatenates args without escaping, so quote any
+          // path that could contain spaces.
+          execFile(npmCommand(), ['install', '--prefix', shellQuote(runtimeRoot), '@deepseek-ai/dsh'], { shell: true, windowsHide: true, timeout: 600_000 }, (err) => {
+            if (err) reject(new Error(`npm install @deepseek-ai/dsh failed: ${err.message}`))
+            else resolve()
+          })
+        })
         return {
           launch: installedLaunch(runtimeRoot, config.nodePath),
-          ensureRuntime: async () => {
+          ensureRuntime: async (force = false) => {
             // npm sharp 0.35.3 (broken release) must be pinned away before
             // (re)installing; overrides force the whole tree to SHARP_PIN.
             ensureSharpPin(runtimeRoot)
             const version = sharpVersion(runtimeRoot)
-            if (hasDshBin(runtimeRoot) && version === SHARP_PIN) return
-            logChannel?.appendLine(`[info] installing @deepseek-ai/dsh into ${runtimeRoot}…`)
-            await new Promise<void>((resolve, reject) => {
-              // shell: true is required on Windows: .cmd shims (npm.cmd) cannot
-              // be launched directly via CreateProcess and fail with EINVAL.
-              // Shell mode concatenates args without escaping, so quote any
-              // path that could contain spaces.
-              execFile(npmCommand(), ['install', '--prefix', shellQuote(runtimeRoot), '@deepseek-ai/dsh'], { shell: true, windowsHide: true, timeout: 600_000 }, (err) => {
-                if (err) reject(new Error(`npm install @deepseek-ai/dsh failed: ${err.message}`))
-                else resolve()
-              })
-            })
+            if (!force && hasDshBin(runtimeRoot) && version === SHARP_PIN) return
+            if (force) logChannel?.appendLine(`[info] force-reinstalling @deepseek-ai/dsh into ${runtimeRoot}…`)
+            else logChannel?.appendLine(`[info] installing @deepseek-ai/dsh into ${runtimeRoot}…`)
+            await install()
           },
           preflight: () => {
             if (!hasDshBin(runtimeRoot)) return ['dsh runtime is not installed yet (auto-install pending).']
@@ -103,6 +111,17 @@ export function activate(context: vscode.ExtensionContext): void {
             return version !== undefined && version !== SHARP_PIN
               ? [`sharp ${version} (broken release) still present after install; retry may be needed.`]
               : []
+          },
+          onModuleMissing: async () => {
+            // Flaky-network installs can leave partial packages; clear the
+            // module tree (keeping the overrides package.json) and reinstall.
+            rmSync(join(runtimeRoot, 'node_modules'), { recursive: true, force: true })
+            try {
+              await install()
+              return true
+            } catch {
+              return false
+            }
           },
         }
       }
@@ -140,9 +159,10 @@ export function activate(context: vscode.ExtensionContext): void {
     launch: () => resolveRuntime().launch,
     env: () => buildEnv(process.env, readConfig()),
     preflight: () => resolveRuntime().preflight(),
-    ensureRuntime: async () => {
-      await resolveRuntime().ensureRuntime?.()
+    ensureRuntime: async (force) => {
+      await resolveRuntime().ensureRuntime?.(force)
     },
+    onModuleMissing: async () => (await resolveRuntime().onModuleMissing?.()) ?? false,
     log: (level, message) => logChannel?.appendLine(`[${level}] ${message}`),
     storagePath: context.globalStorageUri.fsPath,
   })

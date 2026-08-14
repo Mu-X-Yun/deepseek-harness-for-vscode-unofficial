@@ -23,6 +23,7 @@ import type { RuntimeLaunch } from './runtimeDetect.ts'
 
 export type ServerState =
   | { kind: 'stopped' }
+  | { kind: 'installing' }
   | { kind: 'starting' }
   | { kind: 'running'; url: string; port: number }
   | { kind: 'failed'; reason: string }
@@ -41,9 +42,15 @@ export interface DshServerManagerOptions {
   /** Ready-line timeout in ms (first boot of a fresh profile is slow on Windows). */
   readyTimeoutMs?: number
   /** Optional async preparation (e.g. auto-installing the runtime) before preflight/spawn. */
-  ensureRuntime?: () => Promise<void>
+  ensureRuntime?: (force?: boolean) => Promise<void>
   /** Directory for the persisted dsh state file (reuse across reloads). */
   storagePath: string
+  /**
+   * Called when startup failed because of missing/corrupt installed modules
+   * (flaky-network npm installs leave partial packages). The handler should
+   * force a reinstall and restart; return true when a retry was scheduled.
+   */
+  onModuleMissing?: () => Promise<boolean>
 }
 
 /** Persisted shape of a running dsh server (survives extension reloads). */
@@ -70,6 +77,8 @@ export class DshServerManager implements vscode.Disposable {
   private stopping = false
   private stopped: (() => void) | undefined
   private readyTimer: NodeJS.Timeout | undefined
+  /** One-shot guard: a missing-module reinstall is attempted at most once. */
+  private moduleRetryUsed = false
 
   /** Emits on every state transition. */
   readonly onDidChangeState: vscode.Event<ServerState> = this.emitter.event
@@ -97,7 +106,7 @@ export class DshServerManager implements vscode.Disposable {
     // that mutate this.state through the event emitter.
     const current = this.state
     if (current.kind === 'running') return current.url
-    if (current.kind === 'starting') {
+    if (current.kind === 'installing' || current.kind === 'starting') {
       // A previous start is in flight; wait for its resolution.
       await this.waitUntilSettled()
       const settled = this.state
@@ -107,7 +116,11 @@ export class DshServerManager implements vscode.Disposable {
     // the process alive) can be reused instead of cold-starting (~1 min).
     const reused = await this.tryReuse()
     if (reused !== undefined) return reused
-    await this.opts.ensureRuntime?.()
+    // Report installation progress distinctly from server startup.
+    if (this.opts.ensureRuntime !== undefined) {
+      this.setState({ kind: 'installing' })
+      await this.opts.ensureRuntime()
+    }
     const problems = this.opts.preflight()
     if (problems.length > 0) {
       this.setFailed(problems.join(' '))
@@ -228,6 +241,21 @@ export class DshServerManager implements vscode.Disposable {
       return ready.url
     } catch (err) {
       this.setFailed(err instanceof Error ? err.message : String(err))
+      // Flaky-network installs can leave partial packages (e.g. a missing
+      // file inside typebox); surface a one-shot reinstall+retry instead of
+      // failing permanently.
+      const message = err instanceof Error ? err.message : String(err)
+      if (!this.moduleRetryUsed && this.opts.onModuleMissing !== undefined && looksLikeMissingModule(message)) {
+        this.moduleRetryUsed = true
+        this.log('warn', 'startup failed with a missing-module error; reinstalling the runtime once')
+        try {
+          if (await this.opts.onModuleMissing()) {
+            return this.spawnAndWait()
+          }
+        } catch {
+          // reinstall failed; the failed state above stands
+        }
+      }
       throw err
     }
   }
@@ -357,6 +385,11 @@ export class DshServerManager implements vscode.Disposable {
   private log(level: 'info' | 'warn' | 'error' | 'debug', message: string): void {
     this.opts.log(level, message)
   }
+}
+
+/** Matches module-resolution failures (missing/corrupt installs). */
+function looksLikeMissingModule(message: string): boolean {
+  return /Cannot find module|ERR_MODULE_NOT_FOUND|MODULE_NOT_FOUND/.test(message)
 }
 
 /** True when the repo checkout exists and has a Node module graph installed. */
