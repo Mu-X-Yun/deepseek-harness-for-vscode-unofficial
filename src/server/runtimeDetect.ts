@@ -7,7 +7,7 @@
  */
 
 import { execFileSync } from 'node:child_process'
-import { accessSync, readFileSync, readdirSync, statSync, writeFileSync } from 'node:fs'
+import { accessSync, mkdirSync, readFileSync, readdirSync, statSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 
 /** The npm-installed dsh bin path inside a node_modules root. */
@@ -131,6 +131,9 @@ export function sharpVersion(runtimePath: string): string | undefined {
  * @returns the path of the (possibly created) package.json.
  */
 export function ensureSharpPin(runtimeRoot: string): string {
+  // The runtime directory may not exist yet (first auto-install): npm
+  // install would create it, but the pin file is written before that.
+  mkdirSync(runtimeRoot, { recursive: true })
   const pkgPath = join(runtimeRoot, 'package.json')
   let pkg: Record<string, unknown>
   try {
