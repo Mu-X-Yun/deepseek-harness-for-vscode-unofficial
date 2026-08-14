@@ -40,6 +40,8 @@ npm i -g @deepseek-ai/dsh
 ```
 或者完全不装 + `auto-install` 模式（首次启动自动下载）。
 
+> ℹ️ **模式适用性**：`installed` / `auto-install` 支持 **embedded 模式**（npm 包可完整运行 `dsh web`，已实测）。**native 模式**当前仅支持 `repo` —— 上游 npm 包（`dsh-sdk-jsonrpc-demo`）未包含 cordis.yml 所需的插件依赖（llm-deepseek、agent-spine 等），npm 形态下无法独立运行。
+
 ## 开发环境（repo 模式）
 
 扩展默认从 `deepseek-harness-master/` 源码检出运行 dsh（自动探测扩展目录的兄弟目录，也可用 `dsh.runtime.path` 显式指定）：
