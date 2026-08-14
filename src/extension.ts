@@ -96,9 +96,7 @@ export function activate(context: vscode.ExtensionContext): void {
         // cache can hold corrupt entries (flaky-network downloads), which
         // reproduce missing files on every reinstall.
         const freshCache = join(context.globalStorageUri.fsPath, 'npm-cache')
-        const install = (prefix: string, extraArgs: string[] = []): Promise<void> => new Promise<void>((resolve, reject) => {
-          const registry = readConfig().registry
-          if (registry !== undefined) extraArgs = [...extraArgs, '--registry', shellQuote(registry)]
+        const runNpm = (args: string[]): Promise<void> => new Promise<void>((resolve, reject) => {
           // shell: true is required on Windows: .cmd shims (npm.cmd) cannot
           // be launched directly via CreateProcess and fail with EINVAL.
           // Shell mode concatenates args without escaping, so quote any
@@ -106,10 +104,10 @@ export function activate(context: vscode.ExtensionContext): void {
           // log channel so the user can watch install progress.
           const child = execFile(
             npmCommand(),
-            ['install', '--prefix', shellQuote(prefix), '@deepseek-ai/dsh', ...extraArgs],
+            args,
             { shell: true, windowsHide: true, timeout: 600_000, maxBuffer: 16 * 1024 * 1024 },
             (err) => {
-              if (err) reject(new Error(`npm install @deepseek-ai/dsh failed: ${err.message}`))
+              if (err) reject(new Error(`npm ${args[0]} failed: ${err.message}`))
               else resolve()
             },
           )
@@ -122,6 +120,23 @@ export function activate(context: vscode.ExtensionContext): void {
             if (line.length > 0) logChannel?.appendLine(`[npm] ${line}`)
           })
         })
+        const install = async (prefix: string, extraArgs: string[] = []): Promise<void> => {
+          const base = ['install', '--prefix', shellQuote(prefix), '@deepseek-ai/dsh', ...extraArgs]
+          const registry = readConfig().registry
+          if (registry !== undefined) {
+            try {
+              await runNpm([...base, '--registry', shellQuote(registry)])
+              return
+            } catch (err) {
+              // A misconfigured/unreachable mirror must not brick the install;
+              // fall back to the official registry.
+              logChannel?.appendLine(
+                `[warn] registry ${registry} failed (${messageOf(err).slice(0, 120)}); falling back to the official registry`,
+              )
+            }
+          }
+          await runNpm(base)
+        }
         return {
           launch: installedLaunch(detected ?? runtimeRoot, config.nodePath, portOf(useRandomPort, config)),
           ensureRuntime: async (force = false) => {
