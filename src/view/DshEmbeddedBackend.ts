@@ -174,6 +174,10 @@ export class DshEmbeddedBackend implements ChatBackend {
     // registered. Survives webview rebuilds (hide → show), where the state
     // push at attach time would otherwise arrive before this script ran.
     vscode.postMessage({ command: 'ready' })
+    // Health poll: recovers from any missed broadcast (e.g. the running
+    // push arrived while the shell was still initializing), so the sidebar
+    // never stays blank for more than one poll interval.
+    setInterval(() => vscode.postMessage({ command: 'poll' }), 15_000)
   </script>
 </body>
 </html>`
@@ -181,11 +185,11 @@ export class DshEmbeddedBackend implements ChatBackend {
 
   onMessage(message: unknown, webview: vscode.Webview): void {
     const msg = message as Incoming
-    if (msg.command === 'ready') {
-      // The shell's script is live now. Re-send the current state so the
-      // iframe src / banner is set even when the webview was rebuilt (e.g.
-      // after hiding the sidebar): the state push at attach time would have
-      // arrived before the listener was registered and been lost.
+    if (msg.command === 'ready' || msg.command === 'poll') {
+      // 'ready': the shell's script is live — re-send current state (the
+      // push at attach time may have arrived before the listener existed).
+      // 'poll': periodic health poll — recovers from any lost broadcast, so
+      // the sidebar never stays blank even if a state push was missed.
       this.postTo(webview, { kind: 'state', state: this.server.current })
     } else if (msg.command === 'startOrRetry') {
       void this.server.start().catch(() => { /* state change already surfaced the failure */ })
