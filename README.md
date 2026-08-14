@@ -1,5 +1,7 @@
 # DeepSeek Harness for VSCode Unofficial
 
+**中文** | [English](README.en.md)
+
 > ⚠️ **非官方插件**：本项目由社区开发者维护，**与 DeepSeek AI 及其官方产品没有任何关联**，非 DeepSeek 官方发布、认可或支持。
 
 在 VS Code 侧边栏中使用 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness)（`dsh`，DeepSeek 官方的 AI 编程代理框架）的非官方客户端。
