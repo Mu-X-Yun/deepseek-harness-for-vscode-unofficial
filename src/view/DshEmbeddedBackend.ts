@@ -89,11 +89,26 @@ export class DshEmbeddedBackend implements ChatBackend {
       animation: spin 0.9s linear infinite;
     }
     @keyframes spin { to { transform: rotate(360deg); } }
+    #progress {
+      width: 60%; height: 6px; border-radius: 3px; overflow: hidden;
+      background: var(--vscode-widget-border, #888); display: none;
+    }
+    #progress.visible { display: block; }
+    #progress > div {
+      height: 100%; width: 0%;
+      background: var(--vscode-button-background);
+      transition: width 1s linear;
+    }
+    #install-note {
+      max-width: 90%; white-space: pre-wrap; word-break: break-all;
+      font-size: 11px; opacity: 0.85; display: none;
+    }
+    #install-note.visible { display: block; }
   </style>
 </head>
 <body>
   <div id="banner"><span id="banner-text"></span><button id="banner-btn" hidden></button></div>
-  <div id="overlay"><div class="spinner"></div><span id="overlay-text">Loading…</span></div>
+  <div id="overlay"><div class="spinner"></div><span id="overlay-text">Loading…</span><div id="progress"><div id="progress-fill"></div></div><span id="install-note"></span></div>
   <iframe id="dsh-frame" title="DeepSeek Harness"></iframe>
   <script nonce="${nonce}">
     const vscode = acquireVsCodeApi()
@@ -103,8 +118,13 @@ export class DshEmbeddedBackend implements ChatBackend {
     const bannerBtn = document.getElementById('banner-btn')
     const overlay = document.getElementById('overlay')
     const overlayText = document.getElementById('overlay-text')
+    const progressBar = document.getElementById('progress')
+    const progressFill = document.getElementById('progress-fill')
+    const installNote = document.getElementById('install-note')
     let loadTimer = null
     let loaded = false
+    let installTimer = null
+    const INSTALL_EXPECTED_MS = 180000
     bannerBtn.addEventListener('click', () => vscode.postMessage({ command: 'startOrRetry' }))
     function showBanner(text, buttonLabel) {
       bannerText.textContent = text
@@ -142,6 +162,9 @@ export class DshEmbeddedBackend implements ChatBackend {
       if (!msg || msg.kind !== 'state') return
       const s = msg.state
       if (s.kind === 'running') {
+        clearInterval(installTimer)
+        progressBar.classList.remove('visible')
+        installNote.classList.remove('visible')
         hideBanner()
         if (frame.getAttribute('src') !== s.url) {
           frame.setAttribute('src', s.url)
@@ -159,8 +182,23 @@ export class DshEmbeddedBackend implements ChatBackend {
         }
       } else if (s.kind === 'installing') {
         frame.removeAttribute('src')
+        const startedAt = Date.now()
         showOverlay('正在安装 DeepSeek Harness…（首次需要下载，请耐心等待）')
+        progressBar.classList.add('visible')
+        progressFill.style.width = '0%'
+        installNote.classList.toggle('visible', !!s.note)
+        installNote.textContent = s.note || ''
+        clearInterval(installTimer)
+        installTimer = setInterval(() => {
+          const elapsed = Date.now() - startedAt
+          const pct = Math.min(100, Math.round(elapsed / INSTALL_EXPECTED_MS * 100))
+          progressFill.style.width = pct + '%'
+          overlayText.textContent = '正在安装 DeepSeek Harness…（已等待 ' + Math.round(elapsed / 1000) + ' 秒）'
+        }, 1000)
       } else if (s.kind === 'starting') {
+        clearInterval(installTimer)
+        progressBar.classList.remove('visible')
+        installNote.classList.remove('visible')
         frame.removeAttribute('src')
         showOverlay('正在启动 DeepSeek Harness 服务器…')
       } else if (s.kind === 'failed') {

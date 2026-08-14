@@ -23,7 +23,7 @@ import type { RuntimeLaunch } from './runtimeDetect.ts'
 
 export type ServerState =
   | { kind: 'stopped' }
-  | { kind: 'installing' }
+  | { kind: 'installing'; note?: string }
   | { kind: 'starting' }
   | { kind: 'running'; url: string; port: number }
   | { kind: 'failed'; reason: string }
@@ -64,6 +64,8 @@ interface PersistedState {
 /** How many auto-restarts are attempted after an unexpected exit. */
 const MAX_RESTARTS = 3
 const RESTART_BACKOFF_MS = [500, 1000, 2000, 4000] as const
+/** Installation considered "unusually long" after this many ms. */
+const INSTALL_TIMEOUT_MS = 180_000
 /** Lines of stderr kept for failure diagnostics. */
 const STDERR_TAIL = 40
 
@@ -79,6 +81,8 @@ export class DshServerManager implements vscode.Disposable {
   private readyTimer: NodeJS.Timeout | undefined
   /** One-shot guard: a missing-module reinstall is attempted at most once. */
   private moduleRetryUsed = false
+  /** Fires when installation has been running unusually long. */
+  private installTimer: NodeJS.Timeout | undefined
 
   /** Emits on every state transition. */
   readonly onDidChangeState: vscode.Event<ServerState> = this.emitter.event
@@ -118,8 +122,11 @@ export class DshServerManager implements vscode.Disposable {
     if (reused !== undefined) return reused
     // Report installation progress distinctly from server startup.
     if (this.opts.ensureRuntime !== undefined) {
+      this.armInstallTimeout()
       this.setState({ kind: 'installing' })
       await this.opts.ensureRuntime()
+      clearTimeout(this.installTimer)
+      this.installTimer = undefined
     }
     const problems = this.opts.preflight()
     if (problems.length > 0) {
@@ -355,6 +362,24 @@ export class DshServerManager implements vscode.Disposable {
 
   private setStarting(): void {
     this.setState({ kind: 'starting' })
+  }
+
+  /**
+   * After INSTALL_TIMEOUT_MS the overlay switches to "install manually"
+   * guidance; the npm process keeps running and completes on its own.
+   */
+  private armInstallTimeout(): void {
+    clearTimeout(this.installTimer)
+    this.installTimer = setTimeout(() => {
+      if (this.state.kind !== 'installing') return
+      const cwd = this.opts.launch().cwd
+      this.setState({
+        kind: 'installing',
+        note:
+          '安装耗时较长。可自行安装后点击重试：\n' +
+          `npm install --prefix "${cwd}" @deepseek-ai/dsh`,
+      })
+    }, INSTALL_TIMEOUT_MS)
   }
 
   private setFailed(reason: string): void {

@@ -87,10 +87,24 @@ export function activate(context: vscode.ExtensionContext): void {
           // shell: true is required on Windows: .cmd shims (npm.cmd) cannot
           // be launched directly via CreateProcess and fail with EINVAL.
           // Shell mode concatenates args without escaping, so quote any
-          // path that could contain spaces.
-          execFile(npmCommand(), ['install', '--prefix', shellQuote(runtimeRoot), '@deepseek-ai/dsh'], { shell: true, windowsHide: true, timeout: 600_000 }, (err) => {
-            if (err) reject(new Error(`npm install @deepseek-ai/dsh failed: ${err.message}`))
-            else resolve()
+          // path that could contain spaces. Stream npm output into the DSH
+          // log channel so the user can watch install progress.
+          const child = execFile(
+            npmCommand(),
+            ['install', '--prefix', shellQuote(runtimeRoot), '@deepseek-ai/dsh'],
+            { shell: true, windowsHide: true, timeout: 600_000, maxBuffer: 16 * 1024 * 1024 },
+            (err) => {
+              if (err) reject(new Error(`npm install @deepseek-ai/dsh failed: ${err.message}`))
+              else resolve()
+            },
+          )
+          child.stderr?.on('data', (chunk: Buffer) => {
+            const line = chunk.toString().trim()
+            if (line.length > 0) logChannel?.appendLine(`[npm] ${line}`)
+          })
+          child.stdout?.on('data', (chunk: Buffer) => {
+            const line = chunk.toString().trim()
+            if (line.length > 0) logChannel?.appendLine(`[npm] ${line}`)
           })
         })
         return {
