@@ -81,3 +81,7 @@ npm test    # vitest：portParser / config / eventRenderer 纯函数 + SDK 握�
 npm run package    # esbuild build + vsce package → dsh-vscode-0.1.0.vsix
 ```
 VSIX 不捆绑 dsh 运行时；发布形态的 `auto-install` 模式（首次按需安装 `@deepseek-ai/dsh` 到 globalStorage）为规划中功能。
+
+## 许可
+
+[MIT](LICENSE) —— 本项目（扩展本体）为独立开源项目。注意：DeepSeek Harness（`dsh`）本身是 [DeepSeek AI](https://github.com/deepseek-ai/deepseek-harness) 的 MIT 开源项目，本扩展只是它的外部驱动客户端，不包含其源码。
