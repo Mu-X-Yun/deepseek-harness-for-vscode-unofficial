@@ -101,9 +101,7 @@ export class DshEmbeddedBackend implements ChatBackend {
       color: var(--vscode-foreground); background: var(--vscode-editor-background);
       border-top: 1px solid var(--vscode-widget-border, #ccc);
     }
-    /* Mirror layout for the secondary sidebar (narrow view): port on the
-       right, workspace button on the left. */
-    #footer.mirror { flex-direction: row-reverse; }
+
     #footer button {
       border: none; cursor: pointer; padding: 2px 8px; border-radius: 3px;
       color: var(--vscode-button-foreground); background: var(--vscode-button-background);
@@ -116,12 +114,12 @@ export class DshEmbeddedBackend implements ChatBackend {
 <body>
   <div id="banner"><span id="banner-text"></span><button id="banner-btn" hidden></button></div>
   <div id="overlay"><div class="spinner"></div><span id="overlay-text">Loading…</span><span id="install-note"></span></div>
-  <div id="footer">
-    <button class="port-btn" id="port-btn" title="在浏览器中打开"></button>
-    <span class="spacer"></span>
-    <button id="add-ws-btn" title="将当前 VS Code 工作区加入 DeepSeek Harness 工作区">＋ 工作区</button>
-  </div>
   <iframe id="dsh-frame" title="DeepSeek Harness"></iframe>
+  <div id="footer">
+    <button id="add-ws-btn" title="将当前 VS Code 工作区加入 DeepSeek Harness 工作区">＋ 工作区</button>
+    <span class="spacer"></span>
+    <button class="port-btn" id="port-btn" title="在浏览器中打开"></button>
+  </div>
   <script nonce="${nonce}">
     const vscode = acquireVsCodeApi()
     const frame = document.getElementById('dsh-frame')
@@ -139,14 +137,6 @@ export class DshEmbeddedBackend implements ChatBackend {
     let loaded = false
     let installTimer = null
     let installStartedAt = null
-    // The secondary sidebar is typically narrower; mirror the footer so the
-    // port lands on the right and the workspace button on the left there.
-    const footerEl = document.getElementById('footer')
-    function applyMirror() {
-      footerEl.classList.toggle('mirror', window.innerWidth < 350)
-    }
-    applyMirror()
-    window.addEventListener('resize', applyMirror)
     bannerBtn.addEventListener('click', () => vscode.postMessage({ command: 'startOrRetry' }))
     function showBanner(text, buttonLabel) {
       bannerText.textContent = text
