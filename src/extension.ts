@@ -85,7 +85,9 @@ export function activate(context: vscode.ExtensionContext): void {
           return {
             launch: repoLaunch(extensionDir, config.nodePath),
             preflight: () => [
-              'Could not locate the deepseek-harness-master checkout. Set dsh.runtime.path to the repo directory.',
+              'Could not locate the deepseek-harness-master checkout. ' +
+              'Set dsh.runtime.path to the repo directory, or switch dsh.runtime.mode ' +
+              'to "installed" (auto-detect global/npx dsh) or "auto-install" (install on first use).',
             ],
           }
         }

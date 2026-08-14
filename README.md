@@ -30,15 +30,14 @@
 
 | 模式 | 说明 | 适合 |
 |---|---|---|
-| `repo`（默认） | 从 `deepseek-harness-master` 源码检出运行 | 开发/调试 dsh 本身 |
-| `installed` | **自动探测**已安装的 dsh：全局安装（`npm i -g @deepseek-ai/dsh`）或 npx 缓存（跑过一次 `npx @deepseek-ai/dsh web` 即可）；`dsh.runtime.path` 可显式指定 | 已装过 dsh 的普通用户 |
-| `auto-install` | 首次启动自动 `npm install @deepseek-ai/dsh` 到扩展存储 | 不想装任何东西的用户 |
+| `auto-install`（默认） | 首次启动自动 `npm install @deepseek-ai/dsh` 到扩展存储，之后复用 | 开箱即用（推荐） |
+| `installed` | **自动探测**已安装的 dsh：全局安装（`npm i -g @deepseek-ai/dsh`）或 npx 缓存（跑过一次 `npx @deepseek-ai/dsh web` 即可）；`dsh.runtime.path` 可显式指定 | 已装过 dsh 的用户 |
+| `repo` | 从 `deepseek-harness-master` 源码检出运行 | 开发/调试 dsh 本身 |
 
-普通用户推荐：`dsh.runtime.mode: installed` + 全局安装一次：
+普通用户默认 `auto-install` 即可（首次启动自动下载）；已装过 dsh 的切到 `installed` 模式直接复用：
 ```sh
-npm i -g @deepseek-ai/dsh
+npm i -g @deepseek-ai/dsh   # 然后设 dsh.runtime.mode: installed
 ```
-或者完全不装 + `auto-install` 模式（首次启动自动下载）。
 
 > ℹ️ **模式适用性**：`installed` / `auto-install` 支持 **embedded 模式**（npm 包可完整运行 `dsh web`，已实测）。**native 模式**当前仅支持 `repo` —— 上游 npm 包（`dsh-sdk-jsonrpc-demo`）未包含 cordis.yml 所需的插件依赖（llm-deepseek、agent-spine 等），npm 形态下无法独立运行。
 

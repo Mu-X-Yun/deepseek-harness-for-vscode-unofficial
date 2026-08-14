@@ -86,8 +86,8 @@
             "installed",
             "auto-install"
           ],
-          "default": "repo",
-          "markdownDescription": "Where to get the dsh runtime. `repo` (default, development): run from the `deepseek-harness-master` source checkout next to this extension. `installed`: auto-detect a pre-installed `@deepseek-ai/dsh` (global npm install or npx cache; `dsh.runtime.path` overrides). `auto-install`: install `@deepseek-ai/dsh` on first use into the extension's storage."
+          "default": "auto-install",
+          "markdownDescription": "Where to get the dsh runtime. `auto-install` (default): install `@deepseek-ai/dsh` on first use into the extension's storage. `installed`: auto-detect a pre-installed `@deepseek-ai/dsh` (global npm install or npx cache; `dsh.runtime.path` overrides). `repo` (development): run from the `deepseek-harness-master` source checkout next to this extension."
         },
         "dsh.runtime.path": {
           "type": "string",

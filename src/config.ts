@@ -44,7 +44,7 @@ export function loadConfig(get: () => vscode.WorkspaceConfiguration): DshConfig 
   return {
     apiKey: readString(cfg, 'deepseekApiKey'),
     baseUrl: readString(cfg, 'deepseekBaseUrl'),
-    runtimeMode: (readString(cfg, 'runtime.mode') as RuntimeMode | undefined) ?? 'repo',
+    runtimeMode: (readString(cfg, 'runtime.mode') as RuntimeMode | undefined) ?? 'auto-install',
     runtimePath: readString(cfg, 'runtime.path'),
     nodePath: readString(cfg, 'runtime.nodePath'),
     permissionMode: readString(cfg, 'permissionMode') ?? 'workspace-write',
