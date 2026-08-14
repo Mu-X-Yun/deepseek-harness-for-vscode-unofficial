@@ -14,6 +14,7 @@
     "AI",
     "Chat"
   ],
+  "icon": "media/icon.png",
   "main": "./out/extension.js",
   "contributes": {
     "viewsContainers": {
@@ -21,7 +22,7 @@
         {
           "id": "dsh",
           "title": "DeepSeek Harness",
-          "icon": "media/dsh.svg"
+          "icon": "media/icon.png"
         }
       ]
     },
