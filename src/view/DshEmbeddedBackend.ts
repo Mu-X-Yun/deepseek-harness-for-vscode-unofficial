@@ -232,6 +232,7 @@ export class DshEmbeddedBackend implements ChatBackend {
         clearInterval(installTimer)
         installStartedAt = null
         installNote.classList.remove('visible')
+        hideBanner()
         frame.removeAttribute('src')
         showOverlay('正在启动 DeepSeek Harness 服务器…')
       } else if (s.kind === 'failed') {

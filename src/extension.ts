@@ -96,7 +96,7 @@ export function activate(context: vscode.ExtensionContext): void {
         // cache can hold corrupt entries (flaky-network downloads), which
         // reproduce missing files on every reinstall.
         const freshCache = join(context.globalStorageUri.fsPath, 'npm-cache')
-        const install = (extraArgs: string[] = []): Promise<void> => new Promise<void>((resolve, reject) => {
+        const install = (prefix: string, extraArgs: string[] = []): Promise<void> => new Promise<void>((resolve, reject) => {
           const registry = readConfig().registry
           if (registry !== undefined) extraArgs = [...extraArgs, '--registry', shellQuote(registry)]
           // shell: true is required on Windows: .cmd shims (npm.cmd) cannot
@@ -106,7 +106,7 @@ export function activate(context: vscode.ExtensionContext): void {
           // log channel so the user can watch install progress.
           const child = execFile(
             npmCommand(),
-            ['install', '--prefix', shellQuote(runtimeRoot), '@deepseek-ai/dsh', ...extraArgs],
+            ['install', '--prefix', shellQuote(prefix), '@deepseek-ai/dsh', ...extraArgs],
             { shell: true, windowsHide: true, timeout: 600_000, maxBuffer: 16 * 1024 * 1024 },
             (err) => {
               if (err) reject(new Error(`npm install @deepseek-ai/dsh failed: ${err.message}`))
@@ -126,10 +126,23 @@ export function activate(context: vscode.ExtensionContext): void {
           launch: installedLaunch(detected ?? runtimeRoot, config.nodePath, portOf(useRandomPort, config)),
           ensureRuntime: async (force = false) => {
             if (detected !== undefined && !force) return
-            if (detectedRaw !== undefined) {
+            // The npx-cached instance carries the broken sharp (no overrides
+            // there). Repair it IN PLACE so it becomes reusable — avoids
+            // downloading a fresh copy every activation.
+            if (detectedRaw !== undefined && detected === undefined) {
               logChannel?.appendLine(
-                `[info] detected dsh at ${detectedRaw} has sharp ${String(sharpVersion(detectedRaw))} (broken); installing a healthy copy instead`,
+                `[info] detected dsh at ${detectedRaw} has sharp ${String(sharpVersion(detectedRaw))} (broken); repairing it in place`,
               )
+              try {
+                ensureSharpPin(detectedRaw)
+                await install(detectedRaw, ['--cache', shellQuote(freshCache)])
+                if (sharpVersion(detectedRaw) === SHARP_PIN) {
+                  logChannel?.appendLine(`[info] repaired dsh at ${detectedRaw}; reusing it`)
+                  if (!force) return
+                }
+              } catch (err) {
+                logChannel?.appendLine(`[error] in-place repair failed: ${messageOf(err)}`)
+              }
             }
             // npm sharp 0.35.3 (broken release) must be pinned away before
             // (re)installing; overrides force the whole tree to SHARP_PIN.
@@ -142,15 +155,19 @@ export function activate(context: vscode.ExtensionContext): void {
             // packages are already downloaded). Verify essential files right
             // after; a corrupt-entry install is immediately redone from a
             // fresh dedicated cache, without waiting for a boot failure.
-            await install()
+            await install(runtimeRoot)
             const missing = missingRuntimeFiles(runtimeRoot)
             if (missing.length > 0) {
               logChannel?.appendLine(`[warn] install incomplete (${missing.join(', ')}); reinstalling from a fresh cache`)
               rmSync(join(runtimeRoot, 'node_modules'), { recursive: true, force: true })
-              await install(['--cache', shellQuote(freshCache)])
+              await install(runtimeRoot, ['--cache', shellQuote(freshCache)])
               const stillMissing = missingRuntimeFiles(runtimeRoot)
               if (stillMissing.length > 0) {
-                logChannel?.appendLine(`[error] reinstall still incomplete: ${stillMissing.join(', ')}`)
+                // Surface the failure loudly instead of booting into an
+                // endless spawn-fail-reinstall loop.
+                throw new Error(
+                  `dsh 安装不完整（缺少 ${stillMissing.join(', ')}）。可手动执行 npm install --prefix "${runtimeRoot}" @deepseek-ai/dsh 后重试，或配置 dsh.runtime.registry 镜像源加速。`,
+                )
               }
             }
           },
@@ -171,7 +188,7 @@ export function activate(context: vscode.ExtensionContext): void {
             // hold corrupt entries that reproduce the missing files.
             rmSync(join(runtimeRoot, 'node_modules'), { recursive: true, force: true })
             try {
-              await install(['--cache', shellQuote(freshCache)])
+              await install(runtimeRoot, ['--cache', shellQuote(freshCache)])
             } catch {
               return false
             }
