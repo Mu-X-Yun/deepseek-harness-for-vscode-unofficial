@@ -93,7 +93,7 @@ npm i -g @deepseek-ai/dsh   # 然后设 dsh.runtime.mode: installed
 ## 已知限制
 
 - dsh 处于 developer preview（0.1.0-rc.x），兼容性可能变更；扩展锁定版本。
-- embedded 界面是 dsh 自带 Web UI，主题与 VS Code 不完全统一（native 模式解决）。
+- embedded 界面是 dsh 自带 Web UI，主题与 VS Code 不完全统一。
 - embedded 的 iframe 会捕获键盘焦点，部分 VS Code 快捷键在聊天区域不可用。
 - 关闭 VSCode 时 dsh 进程会保留运行（便于下次秒开）；需手动停止时用 `DSH: Stop server` 命令。
 

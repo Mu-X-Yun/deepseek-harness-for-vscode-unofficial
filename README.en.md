@@ -93,7 +93,7 @@ npm i -g @deepseek-ai/dsh   # then set dsh.runtime.mode: installed
 ## Known Limitations
 
 - dsh is in developer preview (0.1.0-rc.x); compatibility may change; the extension pins its version.
-- The embedded UI is dsh's own Web UI — its theme does not fully match VS Code (native mode addresses this).
+- The embedded UI is dsh's own Web UI — its theme does not fully match VS Code.
 - The embedded iframe captures keyboard focus; some VS Code shortcuts are unavailable inside the chat area.
 - The dsh process stays running after VS Code closes (so next start is instant); use `DSH: Stop server` to stop it manually.
 
