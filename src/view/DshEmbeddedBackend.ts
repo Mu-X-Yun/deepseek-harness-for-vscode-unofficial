@@ -113,6 +113,10 @@ export class DshEmbeddedBackend implements ChatBackend {
         showBanner('dsh stopped.', 'Start')
       }
     })
+    // Handshake: ask the host for the current state once the listener is
+    // registered. Survives webview rebuilds (hide → show), where the state
+    // push at attach time would otherwise arrive before this script ran.
+    vscode.postMessage({ command: 'ready' })
   </script>
 </body>
 </html>`
@@ -120,7 +124,13 @@ export class DshEmbeddedBackend implements ChatBackend {
 
   onMessage(message: unknown, webview: vscode.Webview): void {
     const msg = message as Incoming
-    if (msg.command === 'startOrRetry') {
+    if (msg.command === 'ready') {
+      // The shell's script is live now. Re-send the current state so the
+      // iframe src / banner is set even when the webview was rebuilt (e.g.
+      // after hiding the sidebar): the state push at attach time would have
+      // arrived before the listener was registered and been lost.
+      this.postTo(webview, { kind: 'state', state: this.server.current })
+    } else if (msg.command === 'startOrRetry') {
       void this.server.start().catch(() => { /* state change already surfaced the failure */ })
     }
   }
@@ -138,6 +148,10 @@ export class DshEmbeddedBackend implements ChatBackend {
     for (const view of this.views) {
       void view.postMessage(message)
     }
+  }
+
+  private postTo(webview: vscode.Webview, message: ToWebviewMessage): void {
+    void webview.postMessage(message)
   }
 }
 
