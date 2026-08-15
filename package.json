@@ -1,5 +1,5 @@
 {
-  "name": "dsh-vscode",
+  "name": "deepseek-harness-vscode-unofficial",
   "displayName": "DeepSeek Harness for VSCode Unofficial",
   "description": "Unofficial third-party VS Code client for DeepSeek Harness: embedded Web UI in the sidebar. Not affiliated with DeepSeek AI.",
   "version": "0.1.1",
