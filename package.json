@@ -2,7 +2,7 @@
   "name": "deepseek-harness-for-vscode-unofficial",
   "displayName": "DeepSeek Harness for VSCode Unofficial",
   "description": "Unofficial third-party VS Code client for DeepSeek Harness: embedded Web UI in the sidebar. Not affiliated with DeepSeek AI.",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "publisher": "mu-x-yun",
   "author": "Mu-X-Yun",
   "license": "MIT",
@@ -121,7 +121,7 @@
         "dsh.model": {
           "type": "string",
           "default": "deepseek-v4-flash",
-          "markdownDescription": "Default model id used for new agent sessions."
+          "markdownDescription": "Default model id for new sessions in the native chat UI. Currently unused: the native UI is disabled and the embedded Web UI has its own model selector."
         },
         "dsh.logLevel": {
           "type": "string",
@@ -132,7 +132,17 @@
             "debug"
           ],
           "default": "info",
-          "markdownDescription": "Extension log verbosity (Output channel: DSH)."
+          "markdownDescription": "Extension log verbosity: filters which levels reach the DSH output channel (error < warn < info < debug). npm install progress always shows."
+        },
+        "dsh.autoAddWorkspace": {
+          "type": "boolean",
+          "default": true,
+          "markdownDescription": "When the DSH sidebar view opens, automatically adopt the current workspace folder as a dsh workspace (same as the \"＋ 工作区\" button: the first folder only, silent, deduplicated per activation). Disable to opt out."
+        },
+        "dsh.profile": {
+          "type": "string",
+          "default": "web",
+          "markdownDescription": "DeepSeek Harness profile to boot (`--profile <name>`). Switch it from the sidebar footer button (next to \"＋ 工作区\"); an already-running instance of the target profile is adopted as-is, otherwise dsh restarts. Sessions and workspaces are shared at the dsh level — only the extension's profile choice changes."
         }
       }
     }

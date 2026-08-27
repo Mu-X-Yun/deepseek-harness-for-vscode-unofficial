@@ -3,24 +3,39 @@
  * the repo, handshakes over stdio JSON-RPC, then shuts down cleanly.
  * No API key is required — initialize does not resolve credentials.
  * This test needs the repo built and installed (pnpm install + build:lib).
+ *
+ * The suite is skipped (not just deferred) when the harness checkout is
+ * missing: the SDK client is imported dynamically inside beforeAll so a
+ * fresh clone without the sibling repo can still LOAD and run the rest of
+ * `npm test` (a top-level import would fail at collection time).
  */
 
-import { mkdtempSync, rmSync } from 'node:fs'
+import { existsSync, mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
-import { DeepSeekHarness } from '../../deepseek-harness-master/packages/sdk/client/src/api.ts'
 import { ensureRuntimeConfig } from '../src/sdk/runtime.ts'
 
+/** Structural subset of the SDK harness the smoke test drives. */
+interface RuntimeHarness {
+  start(): Promise<void>
+  close(): Promise<void>
+}
+
 const repoPath = join(__dirname, '..', '..', 'deepseek-harness-master')
+const hasRepo = existsSync(join(repoPath, 'package.json'))
 const storage = mkdtempSync(join(tmpdir(), 'dsh-vscode-smoke-'))
 
-describe('jsonrpc runtime handshake', () => {
-  let harness: DeepSeekHarness | undefined
+describe.skipIf(!hasRepo)('jsonrpc runtime handshake', () => {
+  let harness: RuntimeHarness | undefined
 
   beforeAll(async () => {
+    // Variable-path dynamic import: no static resolution of the sibling
+    // repo's SDK, so both vitest collection AND tsc work without it.
+    const sdkApi = join(repoPath, 'packages', 'sdk', 'client', 'src', 'api.ts')
+    const { DeepSeekHarness } = await import(sdkApi)
     const configPath = ensureRuntimeConfig(storage, repoPath)
-    harness = new DeepSeekHarness({
+    const client = new DeepSeekHarness({
       launch: {
         command: process.execPath,
         args: ['--import', 'tsx/esm', join(repoPath, 'packages', 'examples', 'jsonrpc-demo', 'src', 'bin.ts'), configPath],
@@ -32,7 +47,8 @@ describe('jsonrpc runtime handshake', () => {
       provider: 'deepseek-official',
       model: 'deepseek-v4-flash',
     })
-    await harness.start()
+    harness = client
+    await client.start()
   }, 120_000)
 
   afterAll(async () => {

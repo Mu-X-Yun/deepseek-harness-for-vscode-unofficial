@@ -11,7 +11,7 @@
  * comment). This mirrors dsh's own `healProfilesModuleFallback`.
  */
 
-import { mkdirSync, readlinkSync, statSync, symlinkSync, writeFileSync } from 'node:fs'
+import { mkdirSync, readlinkSync, rmSync, statSync, symlinkSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 
 /** The extension-side JSON-RPC runtime bin (source-launched from the repo). */
@@ -40,11 +40,22 @@ export function ensureRuntimeConfig(storagePath: string, repoPath: string): stri
 
   try {
     const st = statSync(nmLink)
-    if (st.isDirectory() && readlinkOf(nmLink) !== nmTarget) {
-      throw new Error('existing node_modules is not the expected junction')
+    if (st.isDirectory()) {
+      // A healthy junction reads back its target; anything else (a real
+      // directory, a file, a stale link to a moved repo) is rebuilt below.
+      if (readlinkOf(nmLink) !== nmTarget) throw new Error('existing node_modules is not the expected junction')
+    } else {
+      throw new Error('existing node_modules is not a directory')
     }
   } catch (err) {
-    // Missing or mismatched: (re)create the junction.
+    // Missing or stale (the repo moved since the junction was created):
+    // remove whatever occupies the link path — this directory is
+    // extension-owned storage — then (re)create the junction.
+    try {
+      rmSync(nmLink, { recursive: true, force: true })
+    } catch {
+      // Removal is best-effort; symlinkSync below reports the real failure.
+    }
     try {
       symlinkSync(nmTarget, nmLink, 'junction')
     } catch (inner) {

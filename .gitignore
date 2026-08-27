@@ -2,3 +2,5 @@ node_modules/
 out/
 *.vsix
 .vscode-test/
+.verify-tmp/
+CODE_REVIEW.md

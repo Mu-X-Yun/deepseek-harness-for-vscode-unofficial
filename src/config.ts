@@ -11,6 +11,7 @@
 import { accessSync } from 'node:fs'
 import { dirname } from 'node:path'
 import type * as vscode from 'vscode'
+import { isValidProfileName } from './server/profileDetect.ts'
 
 export type RuntimeMode = 'repo' | 'installed' | 'auto-install'
 
@@ -38,6 +39,13 @@ export interface DshConfig {
   /** npm registry for auto-install (e.g. a mirror for faster downloads). */
   registry: string | undefined
   logLevel: string
+  /**
+   * Auto-adopt the current workspace folder as a dsh workspace when the
+   * sidebar view opens (same scope as the manual "＋ 工作区" button).
+   */
+  autoAddWorkspace: boolean
+  /** dsh profile to boot (`--profile <name>`; default `web`). */
+  profile: string
 }
 
 /**
@@ -57,7 +65,17 @@ export function loadConfig(get: () => vscode.WorkspaceConfiguration): DshConfig 
     port: cfg.get<number>('runtime.port') ?? 3080,
     registry: readString(cfg, 'runtime.registry'),
     logLevel: readString(cfg, 'logLevel') ?? 'info',
+    autoAddWorkspace: cfg.get<boolean>('autoAddWorkspace') ?? true,
+    // A hand-written settings.json value bypasses the QuickPick validation;
+    // the launcher would resolve an invalid name outside profiles/. Fall
+    // back to web (activate() shows the user one warning).
+    profile: sanitizeProfile(readString(cfg, 'profile')),
   }
+}
+
+/** Returns the name when valid, otherwise the default web profile. */
+function sanitizeProfile(value: string | undefined): string {
+  return value !== undefined && isValidProfileName(value) ? value : 'web'
 }
 
 function readString(cfg: vscode.WorkspaceConfiguration, key: string): string | undefined {

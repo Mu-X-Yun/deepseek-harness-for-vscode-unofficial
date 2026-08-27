@@ -37,4 +37,6 @@ export type HostToWebviewMessage =
   | { type: 'sessionSnapshot'; sessionId: string; events: RenderableEvent[] }
   | { type: 'sessionEvent'; sessionId: string; event: RenderableEvent }
   | { type: 'sessionsUpdated'; sessions: SessionMeta[] }
+  /** Host-minted active session (after a first prompt or New session). */
+  | { type: 'activeSession'; sessionId: string }
   | { type: 'error'; message: string }

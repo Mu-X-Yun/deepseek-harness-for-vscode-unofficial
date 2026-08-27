@@ -116,6 +116,11 @@ export function App(): JSX.Element {
         case 'sessionsUpdated':
           dispatch({ type: 'sessions', sessions: msg.sessions })
           break
+        case 'activeSession':
+          // Host-minted id (first prompt / New session): adopt it so
+          // subsequent prompts and incoming events use the same session.
+          dispatch({ type: 'active', sessionId: msg.sessionId })
+          break
         case 'sessionEvent':
           // One wire event (the live path): fold it into the session's items.
           applyEvents(msg.sessionId, [msg.event])
@@ -157,8 +162,9 @@ export function App(): JSX.Element {
   )
 
   const newSession = useCallback(() => {
+    // The host mints and registers the id and broadcasts it back
+    // (activeSession); the webview must not invent its own.
     vscodeRef.current?.postMessage({ type: 'newSession' })
-    dispatch({ type: 'active', sessionId: `session-${Date.now()}` })
   }, [])
 
   const activeItems =

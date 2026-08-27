@@ -3,28 +3,44 @@
  * launch the extension uses (jsonrpc-agent + generated cordis.yml), with
  * event streaming, buffering, and rendering assertions.
  *
- * Requires DEEPSEEK_API_KEY (real API call); skipped without it.
+ * Requires DEEPSEEK_API_KEY (real API call) AND the deepseek-harness-master
+ * checkout; skipped without either. The SDK client is imported via a
+ * variable-path dynamic import, so a fresh clone without the sibling repo
+ * still LOADS the rest of `npm test` (a top-level import would fail at
+ * collection time).
  */
 
-import { mkdtempSync, rmSync } from 'node:fs'
+import { existsSync, mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
-import { DeepSeekHarness } from '../../deepseek-harness-master/packages/sdk/client/src/api.ts'
 import { ensureRuntimeConfig } from '../src/sdk/runtime.ts'
 import { renderEvents, type RenderableEvent, type UiItem } from '../src/webview/eventRenderer.ts'
 
+/** Structural subset of the SDK harness the e2e drives. */
+interface RuntimeHarness {
+  close(): Promise<void>
+  run(prompt: string, opts?: {
+    onNotification?: (n: { method: string; params: Record<string, unknown> }) => void
+  }): Promise<{ finalResponse: string; events: Array<{ type: string }> }>
+}
+
 const repoPath = join(__dirname, '..', '..', 'deepseek-harness-master')
+const hasRepo = existsSync(join(repoPath, 'package.json'))
 const apiKey = process.env.DEEPSEEK_API_KEY
 
-describe.skipIf(apiKey === undefined || apiKey === '')('native chat e2e', () => {
+describe.skipIf(
+  apiKey === undefined || apiKey === '' || !hasRepo,
+)('native chat e2e', () => {
   it('runs a real turn, streams events, and renders bubbles', async () => {
     const storage = mkdtempSync(join(tmpdir(), 'dsh-vscode-chat-'))
-    let harness: DeepSeekHarness | undefined
+    let harness: RuntimeHarness | undefined
     try {
       // Setup inside the try so a failure here still cleans the temp dir.
+      const sdkApi = join(repoPath, 'packages', 'sdk', 'client', 'src', 'api.ts')
+      const { DeepSeekHarness } = await import(sdkApi)
       const configPath = ensureRuntimeConfig(storage, repoPath)
-      harness = new DeepSeekHarness({
+      const client = new DeepSeekHarness({
         launch: {
           command: process.execPath,
           args: ['--import', 'tsx/esm', join(repoPath, 'packages', 'examples', 'jsonrpc-demo', 'src', 'bin.ts'), configPath],
@@ -41,13 +57,14 @@ describe.skipIf(apiKey === undefined || apiKey === '')('native chat e2e', () => 
         provider: 'deepseek-official',
         model: 'deepseek-v4-flash',
       })
+      harness = client
       const notifications: string[] = []
       // Rendered items accumulated the way the live webview does: one
       // renderEvents call per session.event notification (not one call for
       // the whole sequence — the shipped live path is per-event).
       let rendered: UiItem[] = []
-      const result = await harness.run('用一句话介绍你自己', {
-        onNotification: (n) => {
+      const result = await client.run('用一句话介绍你自己', {
+        onNotification: (n: { method: string; params: Record<string, unknown> }) => {
           notifications.push(n.method)
           if (n.method === 'session.event') {
             const event = (n.params as { event?: RenderableEvent }).event
@@ -62,8 +79,8 @@ describe.skipIf(apiKey === undefined || apiKey === '')('native chat e2e', () => 
 
       // Turn completed with a real assistant answer.
       expect(result.finalResponse.length).toBeGreaterThan(0)
-      expect(result.events.some((e) => e.type === 'user/message')).toBe(true)
-      expect(result.events.some((e) => e.type === 'assistant/message')).toBe(true)
+      expect(result.events.some((e: { type: string }) => e.type === 'user/message')).toBe(true)
+      expect(result.events.some((e: { type: string }) => e.type === 'assistant/message')).toBe(true)
 
       // Rendering: the incremental per-notification fold (the shipped path)
       // produces a user bubble and an assistant bubble with non-empty text.

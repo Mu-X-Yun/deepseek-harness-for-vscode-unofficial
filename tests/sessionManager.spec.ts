@@ -1,5 +1,8 @@
 import { describe, expect, it } from 'vitest'
-import { parseSessionEvent, parseSubagentStarted } from '../src/sdk/SessionManager.ts'
+// Import from the pure core module: this spec must load on a machine
+// WITHOUT the harness repo checkout (SessionManager.ts pulls the SDK
+// client + junction setup).
+import { newSessionId, newSessionMeta, parseSessionEvent, parseSubagentStarted } from '../src/sdk/sessionCore.ts'
 
 describe('parseSessionEvent', () => {
   it('extracts the event envelope from the wire shape { sessionId, event }', () => {
@@ -28,5 +31,21 @@ describe('parseSubagentStarted', () => {
 
   it('rejects params without the wire shape', () => {
     expect(parseSubagentStarted({ parentSessionId: 'root', sessionId: 'child-1' })).toBeUndefined()
+  })
+})
+
+describe('session id minting', () => {
+  it('mints host-owned ids with the session- prefix (pure, no runtime needed)', () => {
+    expect(newSessionId()).toMatch(/^session-[0-9a-f]{24}$/)
+    // New ids are unique per call (the webview must never mint its own).
+    expect(newSessionId()).not.toBe(newSessionId())
+  })
+
+  it('builds a fresh-root-session meta', () => {
+    const meta = newSessionMeta()
+    expect(meta.title).toBe('New session')
+    expect(meta.sessionId).toMatch(/^session-[0-9a-f]{24}$/)
+    expect(meta.parentId).toBeUndefined()
+    expect(meta.createdAt).toBeGreaterThan(0)
   })
 })

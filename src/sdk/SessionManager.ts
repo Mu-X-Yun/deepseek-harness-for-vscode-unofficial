@@ -10,44 +10,17 @@
 import * as vscode from 'vscode'
 import { DeepSeekHarness, HarnessClient, type HarnessNotification } from '../../../deepseek-harness-master/packages/sdk/client/src/index.ts'
 import { jsonrpcAgentCommand, ensureRuntimeConfig } from './runtime.ts'
+import {
+  newSessionId,
+  newSessionMeta,
+  parseSessionEvent,
+  parseSubagentStarted,
+  type SessionEventLike,
+  type SessionMeta,
+} from './sessionCore.ts'
 
-export interface SessionMeta {
-  sessionId: string
-  title: string
-  createdAt: number
-  parentId?: string
-}
-
-/** Structural subset of a session event as buffered for the UI. */
-export type SessionEventLike = { type: string; [key: string]: unknown }
-
-/**
- * Parses a `session.event` notification params object into its event.
- * Wire shape: `{ sessionId, event }` (packages/sdk/protocol types.ts).
- * @returns the event and its session, or undefined when the params do not
- * have the wire shape.
- */
-export function parseSessionEvent(params: Record<string, unknown>): { sessionId: string; event: SessionEventLike } | undefined {
-  const sessionId = params.sessionId
-  const event = params.event
-  if (typeof sessionId !== 'string' || !isEventLike(event)) return undefined
-  return { sessionId, event }
-}
-
-/**
- * Parses a `subagent.started` notification params object.
- * Wire shape: `{ parentSessionId, childSessionId }`.
- */
-export function parseSubagentStarted(params: Record<string, unknown>): { parentSessionId: string; childSessionId: string } | undefined {
-  const parentSessionId = params.parentSessionId
-  const childSessionId = params.childSessionId
-  if (typeof parentSessionId !== 'string' || typeof childSessionId !== 'string') return undefined
-  return { parentSessionId, childSessionId }
-}
-
-function isEventLike(value: unknown): value is SessionEventLike {
-  return typeof value === 'object' && value !== null && typeof (value as { type?: unknown }).type === 'string'
-}
+export type { SessionEventLike, SessionMeta }
+export { newSessionId, newSessionMeta, parseSessionEvent, parseSubagentStarted }
 
 export interface NotificationListener {
   (notification: HarnessNotification, sessionId: string): void
@@ -75,6 +48,12 @@ export class SessionManager implements vscode.Disposable {
   private readonly eventBuffers = new Map<string, SessionEventLike[]>()
   private readonly parentBySession = new Map<string, string>()
   private rootId: string | undefined
+  /**
+   * Runtime generation: bumped whenever the harness is torn down and
+   * rebuilt, so a stale notification-subscription iterator (draining the
+   * previous client) stops forwarding and stops reporting failures.
+   */
+  private epoch = 0
 
   constructor(opts: SessionManagerOptions) {
     this.opts = opts
@@ -88,8 +67,9 @@ export class SessionManager implements vscode.Disposable {
         await this.harness.start()
         return
       } catch {
-        // Handshake failed; tear down and rebuild below.
-        this.harness = undefined
+        // Handshake failed; close the stale runtime (its child process
+        // would otherwise leak) and rebuild below.
+        await this.tearDownHarness()
       }
     }
     const { command, args } = jsonrpcAgentCommand(this.opts.repoPath, this.opts.nodePath)
@@ -110,8 +90,23 @@ export class SessionManager implements vscode.Disposable {
       provider: 'deepseek-official',
       model: this.opts.model,
     })
-    await this.harness.start()
+    try {
+      await this.harness.start()
+    } catch (err) {
+      // Spawn or handshake failed: dispose the half-started runtime before
+      // rethrowing, so a retry does not leak the child process.
+      await this.tearDownHarness()
+      throw err
+    }
     this.attachSubscription()
+  }
+
+  /** Closes the current runtime (if any) and bumps the generation. */
+  private async tearDownHarness(): Promise<void> {
+    this.epoch += 1
+    const harness = this.harness
+    this.harness = undefined
+    if (harness !== undefined) await harness.close().catch(() => {})
   }
 
   /**
@@ -124,17 +119,14 @@ export class SessionManager implements vscode.Disposable {
     if (harness === undefined) throw new Error('runtime not started')
     if (this.rootId === undefined) this.rootId = sessionId
     this.touchSession(sessionId)
-    const messageId = await harness.client.prompt(sessionId, [{ type: 'text', text }])
-    this.log('debug', `prompt enqueued (${messageId})`)
+    await harness.client.prompt(sessionId, [{ type: 'text', text }])
   }
 
   /** Kills the runtime (v1 stop semantics: progress is lost). */
   async stopAgent(): Promise<void> {
-    const harness = this.harness
-    this.harness = undefined
     this.rootId = undefined
     this.eventBuffers.clear()
-    if (harness !== undefined) await harness.close()
+    await this.tearDownHarness()
   }
 
   /** Snapshots the buffered events of a session (for view rebuilds). */
@@ -152,7 +144,18 @@ export class SessionManager implements vscode.Disposable {
    * starts fresh with this id.
    */
   newSessionId(): string {
-    return `session-${crypto.randomUUID().replaceAll('-', '').slice(0, 24)}`
+    return newSessionId()
+  }
+
+  /**
+   * Registers and returns a brand-new root session. The host owns session
+   * ids: the webview must never mint its own, or the id it holds would not
+   * match the one events arrive under.
+   */
+  newSession(): SessionMeta {
+    const meta = newSessionMeta()
+    this.sessions.set(meta.sessionId, meta)
+    return meta
   }
 
   /** Closes the runtime; settles when the child has exited (awaited on reload). */
@@ -174,13 +177,19 @@ export class SessionManager implements vscode.Disposable {
     // HarnessClient.subscribe returns a NotificationSubscription; we drain
     // it with an async iterator to avoid missing backpressure signals.
     const sub = client.subscribe()
+    const myEpoch = this.epoch
     void (async () => {
       try {
         for await (const notification of sub) {
+          // A rebuilt runtime has its own subscription; events from the
+          // previous client must not reach the UI (or the failure channel).
+          if (this.epoch !== myEpoch) return
           this.handleNotification(notification)
         }
       } catch (err) {
-        this.opts.onFailure(err instanceof Error ? err : new Error(String(err)))
+        if (this.epoch === myEpoch) {
+          this.opts.onFailure(err instanceof Error ? err : new Error(String(err)))
+        }
       }
     })()
   }
@@ -227,10 +236,6 @@ export class SessionManager implements vscode.Disposable {
         parentId: parentId ?? this.parentBySession.get(sessionId),
       })
     }
-  }
-
-  private log(level: 'info' | 'debug', message: string): void {
-    void level
   }
 }
 

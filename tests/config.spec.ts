@@ -21,6 +21,26 @@ describe('loadConfig', () => {
     const cfg = loadConfig(() => cfgOf({ 'runtime.port': 4000 }) as never)
     expect(cfg.port).toBe(4000)
   })
+
+  it('defaults autoAddWorkspace to true', () => {
+    const cfg = loadConfig(() => cfgOf({}) as never)
+    expect(cfg.autoAddWorkspace).toBe(true)
+  })
+
+  it('reads autoAddWorkspace from settings', () => {
+    const cfg = loadConfig(() => cfgOf({ autoAddWorkspace: false }) as never)
+    expect(cfg.autoAddWorkspace).toBe(false)
+  })
+
+  it('defaults profile to web', () => {
+    const cfg = loadConfig(() => cfgOf({}) as never)
+    expect(cfg.profile).toBe('web')
+  })
+
+  it('reads profile from settings', () => {
+    const cfg = loadConfig(() => cfgOf({ profile: 'headless' }) as never)
+    expect(cfg.profile).toBe('headless')
+  })
 })
 
 describe('buildEnv', () => {

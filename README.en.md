@@ -12,11 +12,11 @@ Embeds **dsh's official Web UI** in a sidebar iframe (full feature set).
 
 ### 1. Install
 
-Extensions panel → `...` → **Install from VSIX** → pick `dsh-vscode-0.1.0.vsix` from the [Releases](https://github.com/Mu-X-Yun/deepseek-harness-for-vscode-unofficial/releases) page.
+Extensions panel → `...` → **Install from VSIX** → pick `deepseek-harness-for-vscode-unofficial-*.vsix` from the [Releases](https://github.com/Mu-X-Yun/deepseek-harness-for-vscode-unofficial/releases) page.
 
 ### 2. Open the Sidebar
 
-Click the **DSH whale icon** in the activity bar. The first launch auto-installs the dsh runtime and starts it (progress is shown; roughly a minute). Afterwards, Reload / restarts open instantly (the running dsh is reused).
+Click the **DSH whale icon** in the activity bar. The first launch asks whether to auto-install the dsh runtime; after you confirm, it installs and starts (progress is shown; roughly a minute). Afterwards, Reload / restarts open instantly (the running dsh is reused).
 
 The status bar shows the dsh service state and port; click it to open the full UI in an external browser:
 
@@ -30,9 +30,11 @@ Settings (`Ctrl+,`) → search `dsh.deepseekApiKey` → enter your DeepSeek API 
 
 Type a question in the sidebar to converse with the dsh agent (embedded mode gives the full official Web UI: sessions, tool calls, model selection, and more).
 
-**Add the current workspace to dsh workspaces**: click the **Add workspace** button in the sidebar footer to adopt the folder currently open in VS Code (sessions then belong to that workspace):
+**Add the current workspace to dsh workspaces**: opening the sidebar **automatically** adopts the folder currently open in VS Code as a dsh workspace (sessions then belong to that workspace; disable via `dsh.autoAddWorkspace`). You can also click the **＋ 工作区** button in the sidebar footer any time to add it manually:
 
 ![Add workspace button](media/Add_workspace.png)
+
+**Switch profile**: the `profile: <name>` button right of **＋ 工作区** switches the DeepSeek Harness profile (scans `$DSH_HOME/profiles`, or type a name — uninitialized names are auto-created with the web template). Selecting switches immediately: an already-running instance of the target profile is adopted as-is, otherwise dsh restarts with the chosen profile. Sessions and workspaces are shared at the dsh level — only the extension's profile choice changes.
 
 Other commands (Command Palette `Ctrl+Shift+P`):
 
@@ -81,8 +83,10 @@ npm i -g @deepseek-ai/dsh   # then set dsh.runtime.mode: installed
 | `dsh.runtime.registry` | (official) | npm registry mirror (e.g. `https://registry.npmmirror.com`) to speed up first install |
 | `dsh.runtime.port` | `3080` | dsh web port; `0` = random (auto-fallback when 3080 is taken) |
 | `dsh.permissionMode` | `workspace-write` | Injected as `DSH_PERMISSION_MODE` |
-| `dsh.model` | `deepseek-v4-flash` | Default model for new sessions |
-| `dsh.ui.mode` | `embedded` | Sidebar UI (only `embedded` is currently available) |
+| `dsh.model` | `deepseek-v4-flash` | Default model for new sessions in the native chat UI (currently disabled; the embedded UI has its own model selector) |
+| `dsh.logLevel` | `info` | Extension log verbosity: filters which levels reach the DSH output channel (`error < warn < info < debug`); npm install progress always shows |
+| `dsh.autoAddWorkspace` | `true` | When the sidebar opens, automatically adopt the current workspace folder as a dsh workspace (same scope as the "＋ 工作区" button: first folder only, silent, once per activation) |
+| `dsh.profile` | `web` | DeepSeek Harness profile to boot (`--profile <name>`); switch it via the `profile:` button in the sidebar footer (adopts a running target as-is, otherwise restarts dsh) |
 
 ## Prerequisites
 
@@ -92,10 +96,11 @@ npm i -g @deepseek-ai/dsh   # then set dsh.runtime.mode: installed
 
 ## Known Limitations
 
-- dsh is in developer preview (0.1.0-rc.x); compatibility may change; the extension pins its version.
+- dsh is in developer preview (0.1.0-rc.x); compatibility may change; the extension's own version is pinned, while the auto-installed dsh runtime follows the latest `@deepseek-ai/dsh` release.
 - The embedded UI is dsh's own Web UI — its theme does not fully match VS Code.
 - The embedded iframe captures keyboard focus; some VS Code shortcuts are unavailable inside the chat area.
 - The dsh process stays running after VS Code closes (so next start is instant); use `DSH: Stop server` to stop it manually.
+- If another program on port 3080 serves a page with a valid dsh boot manifest (`__DSH_BOOT__`), the extension adopts it as a running dsh (a feature when you already run `dsh web`). Do not let untrusted local programs hold that port; set `dsh.runtime.port` to `0` (random) if in doubt.
 
 ## Architecture Highlights
 
@@ -126,14 +131,14 @@ npm run watch               # esbuild watch (launch.json's preLaunchTask runs it
 ## Testing
 
 ```sh
-npm test    # vitest: renderer/parser/runtime-detection unit tests + SDK handshake + real-chat e2e (skipped without a key)
+npm test    # vitest: renderer/parser/runtime-detection/server-state-machine unit tests + SDK handshake + real-chat e2e (skipped without a key)
 ```
 `tests/native-chat.e2e.spec.ts` runs a full conversation against the real API (requires the `DEEPSEEK_API_KEY` environment variable).
 
 ## Packaging
 
 ```sh
-npm run package    # esbuild build + vsce package → dsh-vscode-0.1.0.vsix
+npm run package    # esbuild build + vsce package → deepseek-harness-for-vscode-unofficial-<version>.vsix
 ```
 The VSIX does not bundle the dsh runtime (`auto-install` mode installs it into the extension storage on first launch).
 

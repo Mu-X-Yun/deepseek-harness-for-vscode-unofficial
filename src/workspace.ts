@@ -43,6 +43,8 @@ export async function addWorkspace(serverUrl: string, folderPath: string): Promi
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body),
+      // A wedged local server must not hang the command forever.
+      signal: AbortSignal.timeout(10_000),
     })
   } catch (err) {
     throw new Error(`dsh server unreachable: ${err instanceof Error ? err.message : String(err)}`)

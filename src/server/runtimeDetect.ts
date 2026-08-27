@@ -8,7 +8,9 @@
 
 import { execFileSync } from 'node:child_process'
 import { accessSync, mkdirSync, readFileSync, readdirSync, statSync, writeFileSync } from 'node:fs'
-import { join } from 'node:path'
+import { homedir } from 'node:os'
+import { dirname, join } from 'node:path'
+import { DEFAULT_PROFILE } from './profileDetect.ts'
 
 /** The npm-installed dsh bin path inside a node_modules root. */
 export function dshBinIn(runtimePath: string): string {
@@ -26,17 +28,36 @@ export function hasDshBin(runtimePath: string): boolean {
 }
 
 /**
+ * Resolves a candidate path to a node_modules root that {@link dshBinIn}
+ * understands. Two layouts occur in practice:
+ *  - the root CONTAINING node_modules (extension runtime, npx cache entry);
+ *  - the node_modules directory ITSELF (`npm root -g` prints this).
+ * @returns the candidate (or its parent) that carries a dsh bin, or
+ * undefined when neither layout does.
+ */
+export function resolveInstallRoot(candidate: string): string | undefined {
+  if (hasDshBin(candidate)) return candidate
+  const parent = dirname(candidate)
+  if (parent !== candidate && hasDshBin(parent)) return parent
+  return undefined
+}
+
+/**
  * Detects an installed dsh in priority order: configured path, global npm
  * root, newest npx cache entry.
  * @param configuredPath - `dsh.runtime.path`, or undefined for auto-detection.
  * @returns a node_modules root containing a usable dsh, or undefined.
  */
 export function findInstalledDsh(configuredPath: string | undefined): string | undefined {
-  if (configuredPath !== undefined && configuredPath.length > 0 && hasDshBin(configuredPath)) {
-    return configuredPath
+  if (configuredPath !== undefined && configuredPath.length > 0) {
+    const configured = resolveInstallRoot(configuredPath)
+    if (configured !== undefined) return configured
   }
   const global = globalNpmRoot()
-  if (global !== undefined && hasDshBin(global)) return global
+  if (global !== undefined) {
+    const resolved = resolveInstallRoot(global)
+    if (resolved !== undefined) return resolved
+  }
   return npxCacheDsh()
 }
 
@@ -45,13 +66,50 @@ export function npmCommand(): string {
   return process.platform === 'win32' ? 'npm.cmd' : 'npm'
 }
 
-/** Runs `npm root -g` to locate the global node_modules root. */
+/** Successful `npm root -g` lookups stay cached this long (spawning npm is slow). */
+const GLOBAL_ROOT_CACHE_TTL_MS = 60_000
+let globalRootCache: { at: number; root: string } | undefined
+
+/**
+ * Runs `npm root -g` to locate the global node_modules directory (the
+ * output IS the node_modules dir, not its parent — callers pass it through
+ * {@link resolveInstallRoot}). Success is cached briefly; failures are not
+ * cached, so a user who just ran `npm i -g @deepseek-ai/dsh` is picked up
+ * on the next attempt.
+ */
 export function globalNpmRoot(): string | undefined {
+  const now = Date.now()
+  if (globalRootCache !== undefined && now - globalRootCache.at < GLOBAL_ROOT_CACHE_TTL_MS) {
+    return globalRootCache.root
+  }
   try {
-    // shell: true — .cmd shims (npm.cmd) fail with EINVAL via CreateProcess.
-    const out = execFileSync(npmCommand(), ['root', '-g'], { encoding: 'utf8', windowsHide: true, timeout: 15_000, shell: true })
+    // shell: true only on Windows — .cmd shims (npm.cmd) fail with EINVAL
+    // via CreateProcess; POSIX execFile passes argv verbatim.
+    const out = execFileSync(npmCommand(), ['root', '-g'], {
+      encoding: 'utf8',
+      windowsHide: true,
+      timeout: 15_000,
+      shell: process.platform === 'win32',
+    })
     const root = out.trim()
-    return root.length > 0 ? root : undefined
+    if (root.length === 0) return undefined
+    globalRootCache = { at: now, root }
+    return root
+  } catch {
+    return undefined
+  }
+}
+
+/** The npm cache's `_npx` directory (Windows: LOCALAPPDATA; POSIX: ~/.npm or XDG). */
+function npxCacheRoot(): string | undefined {
+  if (process.platform === 'win32') {
+    const localAppData = process.env.LOCALAPPDATA
+    return localAppData === undefined ? undefined : join(localAppData, 'npm-cache', '_npx')
+  }
+  const xdg = process.env.XDG_CACHE_HOME
+  if (xdg !== undefined && xdg.length > 0) return join(xdg, 'npm', '_npx')
+  try {
+    return join(homedir(), '.npm', '_npx')
   } catch {
     return undefined
   }
@@ -62,9 +120,8 @@ export function globalNpmRoot(): string | undefined {
  * Returns the newest entry's node_modules root, or undefined.
  */
 export function npxCacheDsh(): string | undefined {
-  const cacheRoot = process.env.LOCALAPPDATA
-  if (cacheRoot === undefined) return undefined
-  const npxRoot = join(cacheRoot, 'npm-cache', '_npx')
+  const npxRoot = npxCacheRoot()
+  if (npxRoot === undefined) return undefined
   let entries: string[]
   try {
     entries = readdirSync(npxRoot, { withFileTypes: true })
@@ -99,19 +156,30 @@ export function nodeCommand(configuredPath: string | undefined): string {
 
 /**
  * Builds the installed-mode runtime launch for an npm-installed dsh.
- * Uses `--profile web` (not the `web` alias) so launcher flags are
- * accepted by the release package.
+ * Uses `--profile <name>` (not the `web` subcommand alias) so launcher
+ * flags are accepted by the release package.
  */
-export function installedLaunch(runtimePath: string, nodePath: string | undefined, port = 0): RuntimeLaunch {
+export function installedLaunch(
+  runtimePath: string,
+  nodePath: string | undefined,
+  port = 0,
+  profile = DEFAULT_PROFILE,
+): RuntimeLaunch {
   const bin = dshBinIn(runtimePath)
   return {
     command: nodeCommand(nodePath),
-    args: [bin, '--profile', 'web', '--port', String(port)],
+    args: [bin, '--profile', profile, '--port', String(port)],
     cwd: runtimePath,
   }
 }
 
-/** The sharp version pinned by the extension (0.35.3 is a broken release). */
+/**
+ * The sharp release that is broken (binary fails to load). Only THIS
+ * version is rejected by the health checks; other versions — older or
+ * newer — are left alone.
+ */
+export const SHARP_BROKEN = '0.35.3'
+/** The sharp version the extension pins for its own auto-install (npm overrides). */
 export const SHARP_PIN = '0.35.2'
 
 /**

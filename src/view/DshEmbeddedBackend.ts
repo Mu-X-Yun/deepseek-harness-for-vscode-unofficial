@@ -16,6 +16,7 @@
  * server state is broadcast to every live view.
  */
 
+import { randomBytes } from 'node:crypto'
 import * as vscode from 'vscode'
 import type { ChatBackend } from './DshChatBackend.ts'
 import type { DshServerManager, ServerState } from '../server/DshServerManager.ts'
@@ -28,6 +29,12 @@ interface ToWebviewMessage {
   state: ServerState
 }
 
+/** Broadcast when the active profile changes (or on the ready handshake). */
+interface ProfileMessage {
+  kind: 'profile'
+  name: string
+}
+
 interface Incoming {
   command?: string
 }
@@ -36,13 +43,22 @@ export class DshEmbeddedBackend implements ChatBackend {
   private readonly views = new Set<vscode.Webview>()
   private readonly disposables: vscode.Disposable[] = []
 
-  constructor(private readonly server: DshServerManager) {
+  constructor(
+    private readonly server: DshServerManager,
+    /** Live-reads the configured profile so switches show up immediately. */
+    private readonly getProfile: () => string,
+  ) {
     // One subscription for all views; broadcasts to each live one.
     this.disposables.push(this.server.onDidChangeState((state) => this.post({ kind: 'state', state })))
   }
 
   attach(webview: vscode.Webview): void {
     this.views.add(webview)
+  }
+
+  /** Pushes the current profile name to every live view. */
+  broadcastProfile(): void {
+    this.post({ kind: 'profile', name: this.getProfile() })
   }
 
   renderHtml(webview: vscode.Webview): string {
@@ -111,15 +127,46 @@ export class DshEmbeddedBackend implements ChatBackend {
     }
     #footer .port-btn { background: none; color: inherit; padding: 2px 4px; }
     #footer .port-btn:hover { background: var(--vscode-list-hoverBackground); }
+    #footer .profile-btn { background: none; color: inherit; padding: 2px 4px; font-family: monospace; }
+    #footer .profile-btn:hover { background: var(--vscode-list-hoverBackground); }
     #footer .spacer { flex: 1; }
+    /* Error panel: bottom of the sidebar (above the footer), scrollable
+       message on the left, retry + feedback stacked vertically on the right. */
+    #error-panel {
+      position: fixed; left: 0; right: 0; bottom: 28px; z-index: 8;
+      display: none; box-sizing: border-box; align-items: flex-start;
+      max-height: 45%; gap: 10px; padding: 8px 10px;
+      color: var(--vscode-errorForeground, #f14c4c);
+      background: var(--vscode-inputValidation-errorBackground, rgba(241, 76, 76, 0.12));
+      border-top: 1px solid var(--vscode-inputValidation-errorBorder, #f14c4c);
+    }
+    #error-panel.visible { display: flex; }
+    #error-text {
+      flex: 1; min-width: 0; overflow-y: auto; max-height: 200px;
+      font-size: 12px; line-height: 1.5; white-space: pre-wrap; word-break: break-all;
+    }
+    #error-actions { flex: none; display: flex; flex-direction: column; gap: 6px; }
+    #error-actions button {
+      border: none; cursor: pointer; padding: 3px 10px; border-radius: 3px;
+      color: var(--vscode-button-foreground); background: var(--vscode-button-background);
+      font-size: 12px; white-space: nowrap;
+    }
   </style>
 </head>
 <body>
   <div id="banner"><span id="banner-text"></span><button id="banner-btn" hidden></button><button id="issue-btn" hidden></button></div>
   <div id="overlay"><div class="spinner"></div><span id="overlay-text">Loading…</span><span id="install-note"></span></div>
   <iframe id="dsh-frame" title="DeepSeek Harness"></iframe>
+  <div id="error-panel">
+    <div id="error-text"></div>
+    <div id="error-actions">
+      <button id="retry-btn">重试</button>
+      <button id="feedback-btn">反馈</button>
+    </div>
+  </div>
   <div id="footer">
     <button id="add-ws-btn" title="将当前 VS Code 工作区加入 DeepSeek Harness 工作区">＋ 工作区</button>
+    <button class="profile-btn" id="profile-btn" title="切换 DeepSeek Harness profile（重启 dsh）">profile: …</button>
     <span class="spacer"></span>
     <button class="port-btn" id="port-btn" title="在浏览器中打开"></button>
   </div>
@@ -135,8 +182,27 @@ export class DshEmbeddedBackend implements ChatBackend {
     const installNote = document.getElementById('install-note')
     const portBtn = document.getElementById('port-btn')
     const addWsBtn = document.getElementById('add-ws-btn')
+    const profileBtn = document.getElementById('profile-btn')
+    const errorPanel = document.getElementById('error-panel')
+    const errorText = document.getElementById('error-text')
+    const retryBtn = document.getElementById('retry-btn')
+    const feedbackBtn = document.getElementById('feedback-btn')
     portBtn.addEventListener('click', () => vscode.postMessage({ command: 'openInBrowser' }))
     addWsBtn.addEventListener('click', () => vscode.postMessage({ command: 'addWorkspace' }))
+    profileBtn.addEventListener('click', () => vscode.postMessage({ command: 'selectProfile' }))
+    retryBtn.addEventListener('click', () => vscode.postMessage({ command: 'startOrRetry' }))
+    feedbackBtn.addEventListener('click', () => vscode.postMessage({ command: 'reportIssue' }))
+    function showErrorPanel(text) {
+      errorText.textContent = text
+      errorPanel.classList.add('visible')
+    }
+    function hideErrorPanel() {
+      errorPanel.classList.remove('visible')
+    }
+    function updateProfile(name) {
+      profileBtn.textContent = 'profile: ' + name
+      profileBtn.title = '切换 DeepSeek Harness profile（当前：' + name + '；切换会重启 dsh）'
+    }
     let loadTimer = null
     let loaded = false
     let installTimer = null
@@ -189,7 +255,12 @@ export class DshEmbeddedBackend implements ChatBackend {
     }
     window.addEventListener('message', (event) => {
       const msg = event.data
-      if (!msg || msg.kind !== 'state') return
+      if (!msg) return
+      if (msg.kind === 'profile') {
+        updateProfile(msg.name)
+        return
+      }
+      if (msg.kind !== 'state') return
       const s = msg.state
       updateFooter(s)
       if (s.kind === 'running') {
@@ -197,6 +268,7 @@ export class DshEmbeddedBackend implements ChatBackend {
         installStartedAt = null
         installNote.classList.remove('visible')
         hideBanner()
+        hideErrorPanel()
         if (frame.getAttribute('src') !== s.url) {
           frame.setAttribute('src', s.url)
           loaded = false
@@ -226,6 +298,7 @@ export class DshEmbeddedBackend implements ChatBackend {
         // A retry after a failure re-enters installing: drop the stale
         // failure banner so the overlay is not contradicted by it.
         hideBanner()
+        hideErrorPanel()
         clearInterval(installTimer)
         installTimer = setInterval(() => {
           const elapsed = Date.now() - installStartedAt
@@ -236,6 +309,7 @@ export class DshEmbeddedBackend implements ChatBackend {
         installStartedAt = null
         installNote.classList.remove('visible')
         hideBanner()
+        hideErrorPanel()
         frame.removeAttribute('src')
         showOverlay('正在启动 DeepSeek Harness 服务器…')
       } else if (s.kind === 'failed') {
@@ -244,13 +318,17 @@ export class DshEmbeddedBackend implements ChatBackend {
         installStartedAt = null
         installNote.classList.remove('visible')
         hideOverlay()
-        showBanner('⚠ ' + s.reason, 'Retry', true)
+        hideBanner()
+        // Errors live in the bottom panel: scrollable message on the left,
+        // retry + feedback stacked on the right.
+        showErrorPanel(s.reason)
       } else {
         frame.removeAttribute('src')
         clearInterval(installTimer)
         installStartedAt = null
         installNote.classList.remove('visible')
         hideOverlay()
+        hideErrorPanel()
         showBanner('DeepSeek Harness 已停止。', '启动')
       }
     })
@@ -279,10 +357,18 @@ export class DshEmbeddedBackend implements ChatBackend {
       void this.server.start().catch(() => { /* state change already surfaced the failure */ })
     } else if (msg.command === 'addWorkspace') {
       void vscode.commands.executeCommand('dsh.addWorkspace')
+    } else if (msg.command === 'selectProfile') {
+      void vscode.commands.executeCommand('dsh.selectProfile')
     } else if (msg.command === 'openInBrowser') {
       void vscode.commands.executeCommand('dsh.openInBrowser')
     } else if (msg.command === 'reportIssue') {
       void vscode.env.openExternal(vscode.Uri.parse(ISSUES_URL))
+    }
+    // The sidebar view opened: auto-adopt the current workspace folder
+    // (dsh.autoAddWorkspace gate + dedup live in the command).
+    if (msg.command === 'ready') {
+      void vscode.commands.executeCommand('dsh.autoAddWorkspace')
+      this.postTo(webview, { kind: 'profile', name: this.getProfile() })
     }
   }
 
@@ -295,18 +381,17 @@ export class DshEmbeddedBackend implements ChatBackend {
     this.views.clear()
   }
 
-  private post(message: ToWebviewMessage): void {
+  private post(message: ToWebviewMessage | ProfileMessage): void {
     for (const view of this.views) {
       void view.postMessage(message)
     }
   }
 
-  private postTo(webview: vscode.Webview, message: ToWebviewMessage): void {
+  private postTo(webview: vscode.Webview, message: ToWebviewMessage | ProfileMessage): void {
     void webview.postMessage(message)
   }
 }
 
 function getNonce(): string {
-  const text = `${Date.now()}-${Math.random()}`
-  return Buffer.from(text).toString('base64').replace(/[^a-zA-Z0-9]/g, '')
+  return randomBytes(16).toString('base64url')
 }

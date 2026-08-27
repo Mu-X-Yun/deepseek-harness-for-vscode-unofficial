@@ -13,6 +13,7 @@
  * replies are broadcast to all live views.
  */
 
+import { randomBytes } from 'node:crypto'
 import * as vscode from 'vscode'
 import type { ChatBackend } from './DshChatBackend.ts'
 import type { SessionManager } from '../sdk/SessionManager.ts'
@@ -74,7 +75,14 @@ export class DshNativeBackend implements ChatBackend {
       case 'prompt': {
         const text = typeof msg.text === 'string' ? msg.text : ''
         if (text.trim().length === 0) return
-        const sessionId = typeof msg.sessionId === 'string' ? msg.sessionId : this.sessions.newSessionId()
+        // The host owns session ids: when the webview has none yet (first
+        // prompt), mint one and tell every view which session is active.
+        let sessionId = typeof msg.sessionId === 'string' ? msg.sessionId : undefined
+        if (sessionId === undefined) {
+          sessionId = this.sessions.newSession().sessionId
+          this.broadcast({ type: 'sessionsUpdated', sessions: this.sessions.listSessions() })
+          this.broadcast({ type: 'activeSession', sessionId })
+        }
         void this.sessions.prompt(sessionId, text).catch((err) => this.handleFailure(err))
         this.broadcast({ type: 'status', state: 'running' })
         break
@@ -90,8 +98,11 @@ export class DshNativeBackend implements ChatBackend {
         this.broadcast({ type: 'status', state: 'idle' })
         break
       case 'newSession': {
-        const id = this.sessions.newSessionId()
-        this.broadcast({ type: 'sessionsUpdated', sessions: [...this.sessions.listSessions(), { sessionId: id, title: 'New session', createdAt: Date.now() }] })
+        // The host mints and registers the id; the webview must not invent
+        // its own (events arrive under the host's id).
+        const meta = this.sessions.newSession()
+        this.broadcast({ type: 'sessionsUpdated', sessions: this.sessions.listSessions() })
+        this.broadcast({ type: 'activeSession', sessionId: meta.sessionId })
         break
       }
     }
@@ -141,6 +152,5 @@ export class DshNativeBackend implements ChatBackend {
 }
 
 function getNonce(): string {
-  const text = `${Date.now()}-${Math.random()}`
-  return Buffer.from(text).toString('base64').replace(/[^a-zA-Z0-9]/g, '')
+  return randomBytes(16).toString('base64url')
 }

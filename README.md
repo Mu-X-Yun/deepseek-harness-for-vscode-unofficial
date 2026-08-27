@@ -12,11 +12,11 @@
 
 ### 1. 安装
 
-扩展面板 → `...` → **Install from VSIX** → 选择 [Release](https://github.com/Mu-X-Yun/deepseek-harness-for-vscode-unofficial/releases) 中下载的 `dsh-vscode-0.1.0.vsix`。
+扩展面板 → `...` → **Install from VSIX** → 选择 [Release](https://github.com/Mu-X-Yun/deepseek-harness-for-vscode-unofficial/releases) 中下载的 `deepseek-harness-for-vscode-unofficial-*.vsix`。
 
 ### 2. 打开侧边栏
 
-点击活动栏的 **DSH 鲸鱼图标** 打开侧边栏。首次使用会自动安装 dsh 运行时并启动（约 1 分钟，界面会显示加载进度），之后 Reload / 重启 VSCode 均秒开（复用运行中的 dsh）。
+点击活动栏的 **DSH 鲸鱼图标** 打开侧边栏。首次使用会先询问是否自动安装 dsh 运行时，确认后开始安装并启动（约 1 分钟，界面会显示加载进度）；之后 Reload / 重启 VSCode 均秒开（复用运行中的 dsh）。
 
 状态栏右侧显示 dsh 服务状态与端口，点击可在外置浏览器打开完整界面：
 
@@ -30,9 +30,11 @@
 
 在侧边栏中输入问题即可与 dsh 代理对话（embedded 为官方 Web UI 的完整交互，含会话、工具调用、模型选择等）。
 
-**将当前工作区加入 dsh 工作区**：点击状态栏的 **Add workspace** 按钮，即可把当前 VS Code 打开的文件夹收编为 dsh 工作区（会话自动归属该工作区）：
+**将当前工作区加入 dsh 工作区**：打开侧边栏时会**自动**把当前 VS Code 打开的文件夹收编为 dsh 工作区（会话自动归属该工作区；可在设置中关闭 `dsh.autoAddWorkspace`）。也可以随时点击侧边栏底部的 **＋ 工作区** 按钮手动添加：
 
 ![Add workspace 按钮](media/Add_workspace.png)
+
+**切换 profile**：侧边栏底部 **＋ 工作区** 右侧的 `profile: <名称>` 按钮可切换 DeepSeek Harness profile（扫描 `$DSH_HOME/profiles`，也可手动输入——不存在时自动初始化，web 模板）。选择即切换：若目标 profile 已在运行则直接接管（不重启），否则以新 profile 重启 dsh。会话与工作区数据由 dsh 全局共享，切换仅改变插件的 profile 选择。
 
 其他常用命令（命令面板 `Ctrl+Shift+P`）：
 
@@ -81,8 +83,10 @@ npm i -g @deepseek-ai/dsh   # 然后设 dsh.runtime.mode: installed
 | `dsh.runtime.registry` | （官方源） | npm 镜像源（如 `https://registry.npmmirror.com`），可加速首次安装 |
 | `dsh.runtime.port` | `3080` | dsh web 端口；`0` = 随机（3080 被占用时自动回退） |
 | `dsh.permissionMode` | `workspace-write` | 注入为 `DSH_PERMISSION_MODE` |
-| `dsh.model` | `deepseek-v4-flash` | 新会话默认模型 |
-| `dsh.ui.mode` | `embedded` | 侧边栏界面（当前仅支持 `embedded`） |
+| `dsh.model` | `deepseek-v4-flash` | native 聊天界面的新会话默认模型（当前未启用；embedded 界面自带模型选择器） |
+| `dsh.logLevel` | `info` | 插件日志级别：过滤进入 DSH 输出通道的日志（`error < warn < info < debug`）；npm 安装进度始终显示 |
+| `dsh.autoAddWorkspace` | `true` | 打开侧边栏时自动把当前工作区文件夹收编为 dsh 工作区（与「＋ 工作区」按钮范围一致：仅第一个文件夹，静默、每激活一次） |
+| `dsh.profile` | `web` | DeepSeek Harness profile（`--profile <name>`）；侧边栏底部 `profile:` 按钮可切换（目标 profile 已在运行则直接接管，否则重启） |
 
 ## 前置要求
 
@@ -92,10 +96,11 @@ npm i -g @deepseek-ai/dsh   # 然后设 dsh.runtime.mode: installed
 
 ## 已知限制
 
-- dsh 处于 developer preview（0.1.0-rc.x），兼容性可能变更；扩展锁定版本。
+- dsh 处于 developer preview（0.1.0-rc.x），兼容性可能变更；插件自身版本锁定，自动安装的 dsh 运行时跟随 `@deepseek-ai/dsh` 最新发布。
 - embedded 界面是 dsh 自带 Web UI，主题与 VS Code 不完全统一。
 - embedded 的 iframe 会捕获键盘焦点，部分 VS Code 快捷键在聊天区域不可用。
 - 关闭 VSCode 时 dsh 进程会保留运行（便于下次秒开）；需手动停止时用 `DSH: Stop server` 命令。
+- 若 3080 端口上已有程序返回合法 dsh 页面指纹（`__DSH_BOOT__` 清单），插件会将其当作运行中的 dsh 接管（本机已跑 `dsh web` 时是特性）；请勿让不受信任的本地程序占用该端口——需要时可把 `dsh.runtime.port` 改为 `0`（随机端口）。
 
 ## 架构要点
 
@@ -126,14 +131,14 @@ npm run watch               # esbuild watch（launch.json 的 preLaunchTask 会�
 ## 测试
 
 ```sh
-npm test    # vitest：渲染/解析/运行时探测纯函数 + SDK 握手 + 真实对话 e2e（无 key 自动跳过）
+npm test    # vitest：渲染/解析/运行时探测/服务器状态机 + SDK 握手 + 真实对话 e2e（无 key 自动跳过）
 ```
 `tests/native-chat.e2e.spec.ts` 会用真实 API Key 跑完整对话链路（需要 `DEEPSEEK_API_KEY` 环境变量）。
 
 ## 打包
 
 ```sh
-npm run package    # esbuild build + vsce package → dsh-vscode-0.1.0.vsix
+npm run package    # esbuild build + vsce package → deepseek-harness-for-vscode-unofficial-<version>.vsix
 ```
 VSIX 不捆绑 dsh 运行时（`auto-install` 模式首次启动自动安装到扩展存储）。
 
