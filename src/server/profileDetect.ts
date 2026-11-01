@@ -6,7 +6,7 @@
  * launcher aliases.
  */
 
-import { accessSync, existsSync, mkdirSync, readdirSync, writeFileSync } from 'node:fs'
+import { accessSync, existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
 
@@ -97,6 +97,28 @@ export function dshHomeOf(env: NodeJS.ProcessEnv): string {
  */
 export function isValidProfileName(name: string): boolean {
   return /^[A-Za-z0-9._-]+$/.test(name) && name !== '.' && name !== '..'
+}
+
+/**
+ * True when the profile boots the Web UI — its `dsh.profile.bundles` stack
+ * includes `@deepseek-ai/dsh-web-app`. Terminal/TUI profiles (e.g. the
+ * `dsh-console` profile backed by `@cofy-x/dsh-console`) boot a different app
+ * that does not accept `--port` and never emits a web URL, so the sidebar
+ * cannot embed them. `web` itself is always a web profile by convention.
+ */
+export function isWebProfile(home: string, name: string): boolean {
+  if (name === DEFAULT_PROFILE) return true
+  try {
+    const manifest = JSON.parse(readFileSync(join(home, 'profiles', name, 'package.json'), 'utf8')) as {
+      dsh?: { profile?: { bundles?: unknown } }
+    }
+    const bundles = manifest.dsh?.profile?.bundles
+    return Array.isArray(bundles) && bundles.some((bundle) =>
+      typeof bundle === 'string' && bundle.includes('dsh-web-app'),
+    )
+  } catch {
+    return false
+  }
 }
 
 /** A profile directory must carry one of these files to count as a profile. */

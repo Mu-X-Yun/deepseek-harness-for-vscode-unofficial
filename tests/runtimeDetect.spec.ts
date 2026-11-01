@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, rmSync, utimesSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -28,7 +28,32 @@ vi.mock('node:child_process', async (importOriginal) => {
   }
 })
 
-const ORIG_LOCALAPPDATA = process.env.LOCALAPPDATA
+/**
+ * `npxCacheRoot()` reads a platform-specific env var and path segment:
+ *   - Windows: LOCALAPPDATA/npm-cache/_npx
+ *   - POSIX:   XDG_CACHE_HOME/npm/_npx (falls back to ~/.npm/_npx)
+ * Stub the platform-correct one so these tests pass on Linux, macOS and
+ * Windows alike.
+ */
+const NPX_ENV = process.platform === 'win32' ? 'LOCALAPPDATA' : 'XDG_CACHE_HOME'
+const NPX_SEGMENT = process.platform === 'win32' ? 'npm-cache' : 'npm'
+const ORIG_NPX_ENV = process.env[NPX_ENV]
+
+/** Points the npx cache root at `root` for the current platform. */
+function stubNpxEnv(root: string): void {
+  vi.stubEnv(NPX_ENV, root)
+}
+
+/** Restores the platform npx env var to its value before the test. */
+function restoreNpxEnv(): void {
+  if (ORIG_NPX_ENV === undefined) vi.unstubAllEnvs()
+  else vi.stubEnv(NPX_ENV, ORIG_NPX_ENV)
+}
+
+/** The npx cache entry directory rooted at `root` for the current platform. */
+function npxEntryDir(root: string, hash: string): string {
+  return join(root, NPX_SEGMENT, '_npx', hash)
+}
 
 /** Builds `<root>/node_modules/@deepseek-ai/dsh/lib/bin.js` like npm would. */
 function fakeDshInstall(root: string): void {
@@ -84,12 +109,11 @@ describe('findInstalledDsh', () => {
 
   it('falls through to the npx cache when no path is configured', () => {
     const la = mkdtempSync(join(tmpdir(), 'dsh-fallthrough-'))
-    vi.stubEnv('LOCALAPPDATA', la)
-    const npx = join(la, 'npm-cache', '_npx', 'hash-fff')
+    stubNpxEnv(la)
+    const npx = npxEntryDir(la, 'hash-fff')
     fakeDshInstall(npx)
     expect(findInstalledDsh(undefined)).toBe(npx)
-    if (ORIG_LOCALAPPDATA === undefined) vi.unstubAllEnvs()
-    else vi.stubEnv('LOCALAPPDATA', ORIG_LOCALAPPDATA)
+    restoreNpxEnv()
     rmSync(la, { recursive: true, force: true })
   })
 })
@@ -122,33 +146,36 @@ describe('npxCacheDsh', () => {
   let la: string
   beforeEach(() => {
     la = mkdtempSync(join(tmpdir(), 'dsh-lappdata-'))
-    vi.stubEnv('LOCALAPPDATA', la)
+    stubNpxEnv(la)
   })
   afterEach(() => {
     // Delete the temp dir BEFORE restoring the env, so rmSync never touches
-    // the real LOCALAPPDATA path.
+    // the real npx cache env path.
     rmSync(la, { recursive: true, force: true })
-    if (ORIG_LOCALAPPDATA === undefined) vi.unstubAllEnvs()
-    else vi.stubEnv('LOCALAPPDATA', ORIG_LOCALAPPDATA)
+    restoreNpxEnv()
   })
 
   it('finds the newest npx cache entry containing dsh', () => {
-    const old = join(la, 'npm-cache', '_npx', 'hash-aaa')
-    const fresh = join(la, 'npm-cache', '_npx', 'hash-bbb')
+    const old = npxEntryDir(la, 'hash-aaa')
+    const fresh = npxEntryDir(la, 'hash-bbb')
     fakeDshInstall(old)
     fakeDshInstall(fresh)
-    // Fresh entry: touch bin.js so its mtime is newer.
-    const freshBin = join(fresh, 'node_modules', '@deepseek-ai', 'dsh', 'lib', 'bin.js')
-    const future = new Date(Date.now() + 5_000)
-    const { utimesSync } = require('node:fs') as typeof import('node:fs')
-    utimesSync(freshBin, future, future)
+    // npxCacheDsh() ranks entries by the mtime of the installed
+    // `@deepseek-ai/dsh` DIRECTORY, so pin its mtime (not a file's) to make
+    // the winner deterministic on every platform and filesystem.
+    const oldDsh = join(old, 'node_modules', '@deepseek-ai', 'dsh')
+    const freshDsh = join(fresh, 'node_modules', '@deepseek-ai', 'dsh')
+    const past = new Date(Date.now() - 10_000)
+    const future = new Date(Date.now() + 10_000)
+    utimesSync(oldDsh, past, past)
+    utimesSync(freshDsh, future, future)
 
     const found = npxCacheDsh()
     expect(found).toBe(fresh)
   })
 
   it('ignores npx entries without a dsh install', () => {
-    mkdirSync(join(la, 'npm-cache', '_npx', 'hash-ccc'), { recursive: true })
+    mkdirSync(npxEntryDir(la, 'hash-ccc'), { recursive: true })
     expect(npxCacheDsh()).toBeUndefined()
   })
 })

@@ -164,11 +164,16 @@ export function installedLaunch(
   nodePath: string | undefined,
   port = 0,
   profile = DEFAULT_PROFILE,
+  includePort = true,
 ): RuntimeLaunch {
   const bin = dshBinIn(runtimePath)
+  const args = [bin, '--profile', profile]
+  // `--port` is a Web-UI flag, not a launcher flag: terminal/TUI profiles
+  // (e.g. dsh-console) reject it as an unknown option.
+  if (includePort) args.push('--port', String(port))
   return {
     command: nodeCommand(nodePath),
-    args: [bin, '--profile', profile, '--port', String(port)],
+    args,
     cwd: runtimePath,
   }
 }
@@ -189,7 +194,10 @@ export const SHARP_PIN = '0.35.2'
 const RUNTIME_ESSENTIALS: ReadonlyArray<readonly [string, string]> = [
   ['@deepseek-ai/dsh', 'lib/bin.js'],
   ['commander', 'index.js'],
-  ['@deepseek-ai/cordis', 'index.js'],
+  // `@deepseek-ai/cordis@4.x` exposes `lib/index.js` as its entry point
+  // (`main: lib/index.js`); the root-level `index.js` no longer exists, so
+  // pinning that path made every healthy install look incomplete.
+  ['@deepseek-ai/cordis', 'lib/index.js'],
   ['typebox', 'build/type/action/module.mjs'],
   ['js-yaml', 'dist/js-yaml.mjs'],
 ]
@@ -218,14 +226,19 @@ export function sharpVersion(runtimePath: string): string | undefined {
 }
 
 /**
- * Ensures `<runtimeRoot>/package.json` pins sharp to {@link SHARP_PIN} via
- * npm overrides, so a reinstall replaces the broken 0.35.3 release across
- * the whole dependency tree.
+ * Ensures `<runtimeRoot>/package.json` declares `@deepseek-ai/dsh` as a real
+ * dependency and pins sharp to {@link SHARP_PIN} via npm overrides.
+ *
+ * Declaring the dependency (instead of passing `@deepseek-ai/dsh` as a bare
+ * CLI argument to `npm install --prefix <root>`) is what forces npm to write
+ * into `<root>/node_modules`: with a bare CLI argument and a manifest that has
+ * no `dependencies`, npm may answer "up to date" against an already-present
+ * global install and leave `<root>/node_modules` empty.
  * @returns the path of the (possibly created) package.json.
  */
-export function ensureSharpPin(runtimeRoot: string): string {
+export function ensureRuntimeManifest(runtimeRoot: string): string {
   // The runtime directory may not exist yet (first auto-install): npm
-  // install would create it, but the pin file is written before that.
+  // install would create it, but the manifest is written before that.
   mkdirSync(runtimeRoot, { recursive: true })
   const pkgPath = join(runtimeRoot, 'package.json')
   let pkg: Record<string, unknown>
@@ -234,6 +247,12 @@ export function ensureSharpPin(runtimeRoot: string): string {
   } catch {
     pkg = {}
   }
+  pkg.name = 'dsh-runtime'
+  pkg.version = '1.0.0'
+  pkg.private = true
+  const dependencies = (pkg.dependencies ?? {}) as Record<string, unknown>
+  dependencies['@deepseek-ai/dsh'] = '*'
+  pkg.dependencies = dependencies
   const overrides = (pkg.overrides ?? {}) as Record<string, unknown>
   overrides.sharp = SHARP_PIN
   pkg.overrides = overrides

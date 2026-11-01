@@ -19,7 +19,7 @@ import * as vscode from 'vscode'
 import { findReadyUrl, hasDshBootManifest, type ReadyLine } from './portParser.ts'
 import { DEFAULT_PROFILE, profileOfArgs } from './profileDetect.ts'
 import type { DshConfig } from '../config.ts'
-export { dshBinIn, ensureSharpPin, findInstalledDsh, globalNpmRoot, hasDshBin, installedLaunch, missingRuntimeFiles, npmCommand, npxCacheDsh, resolveInstallRoot, SHARP_BROKEN, SHARP_PIN, sharpVersion } from './runtimeDetect.ts'
+export { dshBinIn, ensureRuntimeManifest, findInstalledDsh, globalNpmRoot, hasDshBin, installedLaunch, missingRuntimeFiles, npmCommand, npxCacheDsh, resolveInstallRoot, SHARP_BROKEN, SHARP_PIN, sharpVersion } from './runtimeDetect.ts'
 export type { RuntimeLaunch } from './runtimeDetect.ts'
 import type { RuntimeLaunch } from './runtimeDetect.ts'
 
@@ -678,7 +678,7 @@ export class DshServerManager implements vscode.Disposable {
         startedAt: this.installStartedAt,
         note:
           '安装耗时较长。可自行安装后点击重试：\n' +
-          (cwd === undefined ? 'npm install @deepseek-ai/dsh' : `npm install --prefix "${cwd}" @deepseek-ai/dsh`),
+          (cwd === undefined ? 'npm install' : `npm install --prefix "${cwd}"`),
       })
     }, INSTALL_TIMEOUT_MS)
   }
@@ -762,10 +762,13 @@ export function nodeCommand(configuredPath: string | undefined): string {
  * chosen profile via the launcher flag (the `web` subcommand only aliases
  * `--profile web`, so the flag form is the one that names any profile).
  */
-export function repoLaunch(repoPath: string, nodePath?: string, port = 0, profile = DEFAULT_PROFILE): RuntimeLaunch {
+export function repoLaunch(repoPath: string, nodePath?: string, port = 0, profile = DEFAULT_PROFILE, includePort = true): RuntimeLaunch {
+  const args = ['--import', 'tsx/esm', join(repoPath, 'apps', 'cli', 'src', 'bin.ts'), '--profile', profile]
+  // `--port` is a Web-UI flag, not a launcher flag; omit it for terminal/TUI profiles.
+  if (includePort) args.push('--port', String(port))
   return {
     command: nodeCommand(nodePath),
-    args: ['--import', 'tsx/esm', join(repoPath, 'apps', 'cli', 'src', 'bin.ts'), '--profile', profile, '--port', String(port)],
+    args,
     cwd: repoPath,
   }
 }

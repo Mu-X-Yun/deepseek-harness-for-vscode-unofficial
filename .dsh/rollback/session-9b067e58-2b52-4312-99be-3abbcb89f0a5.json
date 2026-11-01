@@ -1,0 +1,94 @@
+{
+  "version": 2,
+  "sessionId": "session-9b067e58-2b52-4312-99be-3abbcb89f0a5",
+  "cwd": "/home/administr/git/github/deepseek-harness-for-vscode-unofficial",
+  "updatedAt": 1793548322512,
+  "checkpoints": [
+    {
+      "turn": 1,
+      "commit": "1f91aa84bdb07461149146164a466536f57ae616",
+      "parent": "1f91aa84bdb07461149146164a466536f57ae616",
+      "time": 1793541211801,
+      "untracked": [],
+      "truncated": false,
+      "after": {
+        "commit": "fd92abd9e55ad02b963103244aad5bee509355b5",
+        "time": 1793541986365
+      }
+    },
+    {
+      "turn": 2,
+      "commit": "fd92abd9e55ad02b963103244aad5bee509355b5",
+      "parent": "fd92abd9e55ad02b963103244aad5bee509355b5",
+      "time": 1793542529610,
+      "untracked": [],
+      "truncated": false
+    },
+    {
+      "turn": 3,
+      "commit": "fd92abd9e55ad02b963103244aad5bee509355b5",
+      "parent": "fd92abd9e55ad02b963103244aad5bee509355b5",
+      "time": 1793543293776,
+      "untracked": [],
+      "truncated": false,
+      "after": {
+        "commit": "f9bbe4aecaa2343d130423c6d94c03b730a8ce95",
+        "time": 1793543913384
+      }
+    },
+    {
+      "turn": 4,
+      "commit": "f9bbe4aecaa2343d130423c6d94c03b730a8ce95",
+      "parent": "f9bbe4aecaa2343d130423c6d94c03b730a8ce95",
+      "time": 1793544824223,
+      "untracked": [],
+      "truncated": false,
+      "after": {
+        "commit": "7e137070b5ebf26227661c839c7d53dbdca2bd92",
+        "time": 1793545098895
+      }
+    },
+    {
+      "turn": 5,
+      "commit": "7e137070b5ebf26227661c839c7d53dbdca2bd92",
+      "parent": "7e137070b5ebf26227661c839c7d53dbdca2bd92",
+      "time": 1793546290701,
+      "untracked": [],
+      "truncated": false,
+      "after": {
+        "commit": "729421a4a473567b4fce8e6dfc3f3ff0246ea0ef",
+        "time": 1793546315213
+      }
+    },
+    {
+      "turn": 6,
+      "commit": "729421a4a473567b4fce8e6dfc3f3ff0246ea0ef",
+      "parent": "729421a4a473567b4fce8e6dfc3f3ff0246ea0ef",
+      "time": 1793546454465,
+      "untracked": [],
+      "truncated": false
+    },
+    {
+      "turn": 7,
+      "commit": "729421a4a473567b4fce8e6dfc3f3ff0246ea0ef",
+      "parent": "729421a4a473567b4fce8e6dfc3f3ff0246ea0ef",
+      "time": 1793548057892,
+      "untracked": [],
+      "truncated": false,
+      "after": {
+        "commit": "4de674937c3ad8570c39cebe40b4cb5b2d63e66e",
+        "time": 1793548171968
+      }
+    },
+    {
+      "turn": 8,
+      "commit": "4de674937c3ad8570c39cebe40b4cb5b2d63e66e",
+      "parent": "4de674937c3ad8570c39cebe40b4cb5b2d63e66e",
+      "time": 1793548322369,
+      "untracked": [],
+      "truncated": false
+    }
+  ],
+  "rolls": [],
+  "undos": []
+}
