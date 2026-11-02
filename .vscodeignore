@@ -10,3 +10,4 @@ vitest.config.ts
 CODE_REVIEW.md
 .gitignore
 package-lock.json
+.dsh/**

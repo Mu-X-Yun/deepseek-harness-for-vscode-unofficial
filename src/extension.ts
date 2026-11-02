@@ -6,7 +6,7 @@
  * chat survives hiding the view and is cleaned up on extension deactivate.
  */
 
-import { execFile } from 'node:child_process'
+import { execFile, execFileSync } from 'node:child_process'
 import { existsSync, rmSync } from 'node:fs'
 import { join } from 'node:path'
 import * as vscode from 'vscode'
@@ -14,7 +14,7 @@ import { buildEnv, defaultRepoPath, loadConfig, type DshConfig } from './config.
 import {
   DshServerManager,
   dshBinIn,
-  ensureSharpPin,
+  ensureRuntimeManifest,
   findInstalledDsh,
   hasDshBin,
   INSTALL_DECLINED_MESSAGE,
@@ -33,7 +33,7 @@ import {
 } from './server/DshServerManager.ts'
 import { DshChatViewProvider } from './view/DshChatViewProvider.ts'
 import { DshEmbeddedBackend, ISSUES_URL } from './view/DshEmbeddedBackend.ts'
-import { dshHomeOf, initProfileSkeleton, isValidProfileName, listProfiles } from './server/profileDetect.ts'
+import { dshHomeOf, initProfileSkeleton, isWebProfile, isValidProfileName, listProfiles } from './server/profileDetect.ts'
 import { addWorkspace } from './workspace.ts'
 
 let server: DshServerManager | undefined
@@ -109,6 +109,11 @@ export function activate(context: vscode.ExtensionContext): void {
     onModuleMissing?: () => Promise<boolean>
   } => {
     const config = readConfig()
+    // `--port` is a Web-UI flag only: terminal/TUI profiles (e.g. dsh-console)
+    // reject it and never emit a web URL, so the sidebar cannot embed them.
+    const profileWeb = isWebProfile(dshHomeOf(process.env), config.profile)
+    const notWebHint = (profile: string): string =>
+      `Profile "${profile}" is a terminal (TUI) app, not a Web UI, so it cannot be shown in the sidebar. Run it in a terminal instead: dsh --profile ${profile}`
     switch (config.runtimeMode) {
       case 'installed': {
         const runtimePath = findInstalledDsh(config.runtimePath)
@@ -117,13 +122,14 @@ export function activate(context: vscode.ExtensionContext): void {
             ? 'No installed dsh found. Run `npm i -g @deepseek-ai/dsh` (or use `npx @deepseek-ai/dsh web` once), or set dsh.runtime.path.'
             : `No dsh at ${config.runtimePath} (expected ${dshBinIn(config.runtimePath)}).`
           return {
-            launch: installedLaunch(config.runtimePath ?? '', config.nodePath, portOf(useRandomPort, config), config.profile),
-            preflight: () => [hint],
+            launch: installedLaunch(config.runtimePath ?? '', config.nodePath, portOf(useRandomPort, config), config.profile, profileWeb),
+            preflight: () => [profileWeb ? hint : notWebHint(config.profile)],
           }
         }
         return {
-          launch: installedLaunch(runtimePath, config.nodePath, portOf(useRandomPort, config), config.profile),
+          launch: installedLaunch(runtimePath, config.nodePath, portOf(useRandomPort, config), config.profile, profileWeb),
           preflight: () => {
+            if (!profileWeb) return [notWebHint(config.profile)]
             // npm sharp 0.35.3 is the one broken release (binary fails to
             // load); detect it and point at a fix without touching the
             // user's install. Other versions are left alone.
@@ -206,13 +212,27 @@ export function activate(context: vscode.ExtensionContext): void {
           })
         })
         const install = async (prefix: string, extraArgs: string[] = [], skipRegistry = false): Promise<void> => {
+          // Log the effective npm and where it will install, so a
+          // "up to date"-without-node_modules situation is diagnosable from
+          // the DSH output channel alone.
+          try {
+            const version = execFileSync(npmCommand(), ['--version'], { encoding: 'utf8', windowsHide: true, timeout: 15_000 }).trim()
+            const target = execFileSync(npmCommand(), ['root', '--prefix', prefix], { encoding: 'utf8', windowsHide: true, timeout: 15_000 }).trim()
+            logChannel?.appendLine(`[info] npm ${version}; install root ${target}`)
+          } catch (err) {
+            logChannel?.appendLine(`[warn] npm probe failed: ${messageOf(err)}`)
+          }
           // Cap npm's own network retries so a slow-but-alive mirror cannot
           // burn the whole 600s install timeout before the fallback runs.
+          // The package is declared in <prefix>/package.json (see
+          // ensureRuntimeManifest), NOT passed here as a CLI argument: a bare
+          // `npm install --prefix <dir> @deepseek-ai/dsh` can report
+          // "up to date" against an existing global install and skip writing
+          // <dir>/node_modules entirely.
           const base = [
             'install',
             '--prefix',
             prefix,
-            '@deepseek-ai/dsh',
             '--fetch-timeout', '60000',
             '--fetch-retries', '1',
             ...extraArgs,
@@ -247,7 +267,7 @@ export function activate(context: vscode.ExtensionContext): void {
         /** True when the extension's own runtime copy is already usable. */
         const runtimeReady = (): boolean => hasDshBin(runtimeRoot) && sharpVersion(runtimeRoot) !== SHARP_BROKEN
         return {
-          launch: installedLaunch(detected ?? runtimeRoot, config.nodePath, portOf(useRandomPort, config), config.profile),
+          launch: installedLaunch(detected ?? runtimeRoot, config.nodePath, portOf(useRandomPort, config), config.profile, profileWeb),
           confirmEnsureRuntime: async () => {
             // A healthy detected copy or an already-installed extension
             // runtime needs no download, so no prompt. Otherwise the user
@@ -277,7 +297,7 @@ export function activate(context: vscode.ExtensionContext): void {
             }
             // npm sharp 0.35.3 (broken release) must be pinned away before
             // (re)installing; overrides force the whole tree to SHARP_PIN.
-            ensureSharpPin(runtimeRoot)
+            ensureRuntimeManifest(runtimeRoot)
             if (runtimeReady()) return
             logChannel?.appendLine(`[info] installing @deepseek-ai/dsh into ${runtimeRoot}…`)
             // First install uses the user's global npm cache (fast when
@@ -296,12 +316,13 @@ export function activate(context: vscode.ExtensionContext): void {
                 // endless spawn-fail-reinstall loop. DshServerManager.start()
                 // turns this into a 'failed' state (banner + Retry).
                 throw new Error(
-                  `dsh 安装不完整（缺少 ${stillMissing.join(', ')}）。可手动执行 npm install --prefix "${runtimeRoot}" @deepseek-ai/dsh 后重试，或配置 dsh.runtime.registry 镜像源加速。`,
+                  `dsh 安装不完整（缺少 ${stillMissing.join(', ')}）。可手动执行 npm install --prefix "${runtimeRoot}" 后重试，或配置 dsh.runtime.registry 镜像源加速。`,
                 )
               }
             }
           },
           preflight: () => {
+            if (!profileWeb) return [notWebHint(config.profile)]
             // Check the path actually used for launch (the detected npx/global
             // install, not the extension's own runtime dir).
             const activePath = detected ?? runtimeRoot
@@ -346,17 +367,20 @@ export function activate(context: vscode.ExtensionContext): void {
         const repoPath = config.runtimePath ?? defaultRepoPath(extensionDir)
         if (repoPath === undefined) {
           return {
-            launch: repoLaunch(extensionDir, config.nodePath, portOf(useRandomPort, config), config.profile),
+            launch: repoLaunch(extensionDir, config.nodePath, portOf(useRandomPort, config), config.profile, profileWeb),
             preflight: () => [
-              'Could not locate the deepseek-harness-master checkout. ' +
-              'Set dsh.runtime.path to the repo directory, or switch dsh.runtime.mode ' +
-              'to "installed" (auto-detect global/npx dsh) or "auto-install" (install on first use).',
+              profileWeb
+                ? 'Could not locate the deepseek-harness-master checkout. ' +
+                  'Set dsh.runtime.path to the repo directory, or switch dsh.runtime.mode ' +
+                  'to "installed" (auto-detect global/npx dsh) or "auto-install" (install on first use).'
+                : notWebHint(config.profile),
             ],
           }
         }
         return {
-          launch: repoLaunch(repoPath, config.nodePath, portOf(useRandomPort, config), config.profile),
+          launch: repoLaunch(repoPath, config.nodePath, portOf(useRandomPort, config), config.profile, profileWeb),
           preflight: () => {
+            if (!profileWeb) return [notWebHint(config.profile)]
             const problems: string[] = []
             if (!repoInstalled(repoPath)) {
               problems.push('The dsh repo has no node_modules — run `pnpm install` in it first.')
@@ -532,6 +556,14 @@ export function activate(context: vscode.ExtensionContext): void {
         name = picked.label
       }
       if (name === current) return
+      // Terminal/TUI profiles (e.g. dsh-console) are not Web UIs: they reject
+      // `--port` and never emit a web URL, so the sidebar cannot embed them.
+      if (!isWebProfile(home, name)) {
+        void vscode.window.showWarningMessage(
+          `Profile "${name}" is a terminal (TUI) app, not a Web UI, so it cannot be shown in the sidebar. Run it in a terminal instead: dsh --profile ${name}`,
+        )
+        return
+      }
       try {
         await vscode.workspace.getConfiguration('dsh').update('profile', name, vscode.ConfigurationTarget.Global)
       } catch (err) {
